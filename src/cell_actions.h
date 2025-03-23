@@ -6,7 +6,7 @@
 // Cell creation
 void PlaceSoil(Vector2 position);
 void PlaceWater(Vector2 position);
-void PlaceVapor(Vector2 position, int moisture);
+
 void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius);
 
 // Cell movement

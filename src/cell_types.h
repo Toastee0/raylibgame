@@ -9,7 +9,7 @@
 #define CELL_TYPE_SOIL 1
 #define CELL_TYPE_WATER 2
 #define CELL_TYPE_PLANT 3
-#define CELL_TYPE_VAPOR 4
+#define CELL_TYPE_VAPOR 0 //vapor is air
 
 typedef struct {
     int type;  // -1 = immutable border 0 = air, 1 = soil, 2 = water, 3 = plant, 4 = vapor

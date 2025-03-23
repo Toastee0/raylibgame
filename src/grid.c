@@ -18,10 +18,8 @@ void InitGrid(void) {
         for(int j = 0; j < GRID_WIDTH; j++) {
             grid[i][j].position = (Vector2){j * CELL_SIZE, i * CELL_SIZE};
             grid[i][j].baseColor = BLACK;
-            
-            // Initialize as air instead of vapor to prevent infinite processing on startup
             grid[i][j].type = CELL_TYPE_AIR;
-            grid[i][j].moisture = 0;
+            grid[i][j].moisture = 20;
             grid[i][j].permeable = 1;
             grid[i][j].is_falling = false;
             grid[i][j].volume = 0;
@@ -65,16 +63,9 @@ int CalculateTotalMoisture(void) {
     return totalMoisture;
 }
 
-// Clamp moisture value to valid range
-int ClampMoisture(int value) {
-    if(value < 0) return 0;
-    if(value > 100) return 100;
-    return value;
-}
-
 // Check if a tile is a border or out of bounds
 bool IsBorderTile(int x, int y) {
-    return (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT || 
+    return (x < 1 || x >= GRID_WIDTH - 1 || y < 1 || y >= GRID_HEIGHT - 1 || 
             grid[y][x].type == CELL_TYPE_BORDER);
 }
 

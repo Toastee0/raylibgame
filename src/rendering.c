@@ -14,9 +14,7 @@ void DrawGameGrid(void) {
             // Add safety check to prevent undefined colors
             Color cellColor = grid[i][j].baseColor;
             
-            // Enforce moisture limits
-            grid[i][j].moisture = ClampMoisture(grid[i][j].moisture);
-            
+                     
             // Fix for pink, purple or undefined colors
             if((cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 200) || 
                (cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 100)) {
@@ -51,20 +49,6 @@ void DrawGameGrid(void) {
                         break;
                     case CELL_TYPE_PLANT: // Plant
                         cellColor = GREEN;
-                        break;
-                    case CELL_TYPE_VAPOR: // Vapor
-                        {
-                            // Recalculate vapor color using proper threshold
-                            if(grid[i][j].moisture < 50) {
-                                cellColor = BLACK; // Invisible
-                            } else {
-                                float intensityPct = (float)(grid[i][j].moisture - 50) / 50.0f;
-                                int brightness = 128 + (int)(127 * intensityPct);
-                                cellColor = (Color){
-                                    brightness, brightness, brightness, 255
-                                };
-                            }
-                        }
                         break;
                     default:
                         cellColor = BLACK; // Default fallback

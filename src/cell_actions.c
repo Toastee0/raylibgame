@@ -44,38 +44,6 @@ void PlaceWater(Vector2 position) {
     grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
 }
 
-// Place vapor at the given position
-void PlaceVapor(Vector2 position, int moisture) {
-    int x = (int)position.x;
-    int y = (int)position.y;
-    
-    // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
-    
-    // Clamp moisture to maximum value of 100
-    moisture = ClampMoisture(moisture);
-    
-    grid[y][x].type = CELL_TYPE_VAPOR;
-    grid[y][x].moisture = moisture;
-    
-    // Vapor under 50 moisture is invisible
-    if(moisture < 50) {
-        grid[y][x].baseColor = BLACK; // Make it invisible (same as background)
-    } else {
-        // Brightness based on moisture content (50-100 maps to 128-255)
-        float intensityPct = (float)(moisture - 50) / 50.0f;
-        int brightness = 128 + (int)(127 * intensityPct);
-        
-        grid[y][x].baseColor = (Color){
-            brightness,
-            brightness,
-            brightness,
-            255
-        };
-    }
-    
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
-}
 
 // Place cells in a circular pattern
 void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
@@ -111,10 +79,6 @@ void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
 // Move a cell from one position to another
 void MoveCell(int x, int y, int x2, int y2) {
     // Add stronger boundary checks for screen edges
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT ||
-       x2 < 0 || x2 >= GRID_WIDTH || y2 < 0 || y2 >= GRID_HEIGHT) {
-        return; // Out of bounds, prevent this move
-    }
 
     // Special handling for sand falling through water
     if(grid[y][x].type == CELL_TYPE_SOIL && grid[y2][x2].type == CELL_TYPE_WATER) {
@@ -199,7 +163,7 @@ void MoveCell(int x, int y, int x2, int y2) {
     }
     
     // Special handling for sand falling through vapor
-    if(grid[y][x].type == CELL_TYPE_SOIL && grid[y2][x2].type == CELL_TYPE_VAPOR) {
+    if(grid[y][x].type == CELL_TYPE_SOIL && grid[y2][x2].type == CELL_TYPE_AIR) {
         // Save the total moisture before any operations
         int totalMoistureBefore = grid[y][x].moisture + grid[y2][x2].moisture;
         
@@ -218,7 +182,7 @@ void MoveCell(int x, int y, int x2, int y2) {
             grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
             
             // All vapor's moisture moves to the upper cell (now vapor)
-            grid[y][x].type = CELL_TYPE_VAPOR;
+            grid[y][x].type = CELL_TYPE_AIR;
             grid[y][x].moisture = availableMoisture;
             grid[y][x].is_falling = false;
             
@@ -264,7 +228,7 @@ void MoveCell(int x, int y, int x2, int y2) {
             grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
             
             // Remaining moisture becomes vapor in the upper position
-            grid[y][x].type = CELL_TYPE_VAPOR;
+            grid[y][x].type = CELL_TYPE_AIR;
             grid[y][x].moisture = remainingMoisture;
             grid[y][x].is_falling = false;
             
@@ -317,7 +281,7 @@ void MoveCell(int x, int y, int x2, int y2) {
     }
     
     // Special handling for water falling through vapor
-    if(grid[y][x].type == CELL_TYPE_WATER && grid[y2][x2].type == CELL_TYPE_VAPOR) {
+    if(grid[y][x].type == CELL_TYPE_WATER && grid[y2][x2].type == CELL_TYPE_AIR) {
         // Swap the cells - water falls through vapor
         GridCell temp = grid[y2][x2];
         grid[y2][x2] = grid[y][x];
@@ -334,7 +298,7 @@ void MoveCell(int x, int y, int x2, int y2) {
     }
     
     // Special handling for vapor rising through less dense vapor
-    if(grid[y][x].type == CELL_TYPE_VAPOR && grid[y2][x2].type == CELL_TYPE_VAPOR && grid[y][x].moisture > grid[y2][x2].moisture) {
+    if(grid[y][x].type == CELL_TYPE_AIR && grid[y2][x2].type == CELL_TYPE_AIR && grid[y][x].moisture > grid[y2][x2].moisture) {
         // Swap positions - denser vapor displaces less dense vapor when rising
         GridCell temp = grid[y2][x2];
         grid[y2][x2] = grid[y][x];
