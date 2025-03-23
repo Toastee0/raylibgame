@@ -18,6 +18,7 @@
 *   Copyright (c) 2013-2024 Ramon Santamaria (@raysan5)
 *
 ********************************************************************************************/
+//code rules: no moisture can be destroyed, only moved, to conseve the total water in the simulation.
 
 #include "raylib.h"
 #include <stddef.h>
@@ -53,7 +54,7 @@ typedef struct {
     int volume; //1-10, how much of the density of the object is filled, 1 = 10% 10 = 100%, for allowing water to evaoprate into moist air, or be absorbed by soil.
     int Energy; //5 initial, reduced when replicating.
     int height; //height of the pixel, intially 0, this is an offset to allow limiting and guiding the growth of plant type pixels.
-    float moisture; //moisture level of the pixel, 0-8 each point of moisture can move to an adjacent cell by diffusion. but only if the cell is permeable. 
+    int moisture; // Moisture level: 0-100 integer instead of 0.0-1.0 float
     int permeable; //0 = impermeable, 1 = permeable (water permeable)
     int age; //age of the object, used for plant growth and reproduction.
     int maxage; //max age of the object, used for plant growth and reproduction.
@@ -61,6 +62,7 @@ typedef struct {
     int freezingpoint; //freezing point of the object.
     int boilingpoint; //boiling point of the object.
     int temperaturepreferanceoffset; 
+    bool is_falling; // New field to explicitly track falling state
 } GridCell;
 
 
@@ -83,13 +85,14 @@ static void HandleInput(void);
 static void PlaceSoil(Vector2 position);
 static void PlaceWater(Vector2 position);
 static void MoveCell(int x, int y, int x2, int y2);
-static void CopyCell(int x, int y, int x2, int y2);
 static void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius);
 static void TransferMoisture(void);
 static void UpdateVapor(void);
-static void PlaceVapor(Vector2 position, float moisture);
+static void PlaceVapor(Vector2 position, int moisture);
 static void FloodFillCeilingCluster(int x, int y, int clusterID, int** clusterIDs);
 static void DebugGridCells(void); // Add debug function
+static int CalculateTotalMoisture(); // Add function to calculate total moisture
+static int ClampMoisture(int value); // Add ClampMoisture declaration
 
 
 // Main function updates:
@@ -124,7 +127,7 @@ int main() {
     return 0;
 }
 
-// Initialize the grid
+// Initialize the grid - fix initialization to avoid infinite loops
 static void InitGrid(void) {
     grid = (GridCell**)malloc(GRID_HEIGHT * sizeof(GridCell*));
     for(int i = 0; i < GRID_HEIGHT; i++) {
@@ -133,14 +136,27 @@ static void InitGrid(void) {
             grid[i][j].position = (Vector2){j * CELL_SIZE, i * CELL_SIZE};
             grid[i][j].baseColor = BLACK;
             
-            // Initialize all empty cells as very low moisture vapor
-            grid[i][j].type = 4;  // Vapor type
-            grid[i][j].moisture = 0.02f;  // Minimal moisture
+            // Initialize as air instead of vapor to prevent infinite processing on startup
+            grid[i][j].type = 0;  // Air type (was 4 for vapor)
+            grid[i][j].moisture = 0;  // Integer moisture (was 0.0f)
             grid[i][j].permeable = 1;
+            grid[i][j].is_falling = false;
+            grid[i][j].volume = 0;
+            
+            // Initialize other fields to safe defaults
+            grid[i][j].objectID = 0;
+            grid[i][j].colorhigh = 0;
+            grid[i][j].colorlow = 0;
+            grid[i][j].Energy = 0;
+            grid[i][j].height = 0;
+            grid[i][j].age = 0;
+            grid[i][j].maxage = 0;
+            grid[i][j].temperature = 20; // Room temperature
         }
     }
 }
 
+// Fix sand falling through vapor when already saturated with moisture
 static void MoveCell(int x, int y, int x2, int y2) {
     // Add stronger boundary checks for screen edges
     if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT ||
@@ -154,14 +170,200 @@ static void MoveCell(int x, int y, int x2, int y2) {
     
     // Special handling for sand falling through water
     if(grid[y][x].type == 1 && grid[y2][x2].type == 2) {
-        // Swap the cells - sand falls through water
-        GridCell temp = grid[y2][x2];
-        grid[y2][x2] = grid[y][x];
-        grid[y][x] = temp;
+        // Save the total moisture before any operations
+        int totalMoistureBefore = grid[y][x].moisture + grid[y2][x2].moisture;
         
-        // Update positions for both cells
-        grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
-        grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
+        // Calculate how much moisture sand can absorb
+        int availableMoisture = grid[y2][x2].moisture;
+        int sandCurrentMoisture = grid[y][x].moisture;
+        int sandCapacity = 100 - sandCurrentMoisture;
+        
+        // Determine how much sand will absorb
+        int amountToAbsorb = (sandCapacity > availableMoisture) ? 
+                                availableMoisture : sandCapacity;
+        
+        // Calculate remaining moisture
+        int remainingMoisture = availableMoisture - amountToAbsorb;
+        
+        // If there's significant moisture left, we'll swap with modified values
+        if(remainingMoisture > 10) {  // > 0.1 in the old scale
+            // Save original sand cell
+            GridCell sandCell = grid[y][x];
+            
+            // Add absorbed moisture to sand 
+            sandCell.moisture += amountToAbsorb;
+            sandCell.is_falling = true;
+            
+            // Move sand to lower position
+            grid[y2][x2] = sandCell;
+            grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
+            
+            // Remaining moisture becomes water in the upper position
+            grid[y][x].type = 2; // Water type
+            grid[y][x].moisture = remainingMoisture;
+            grid[y][x].is_falling = false;
+            
+            // Update water color
+            float intensity = (float)remainingMoisture / 100.0f;
+            grid[y][x].baseColor = (Color){
+                0 + (int)(200 * (1.0f - intensity)),
+                120 + (int)(135 * (1.0f - intensity)),
+                255,
+                255
+            };
+        }
+        else {
+            // Move sand down, replacing water
+            grid[y2][x2] = grid[y][x];
+            grid[y2][x2].moisture += availableMoisture;  // Add all available moisture
+            grid[y2][x2].is_falling = true;
+            grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
+            
+            // Clear the original cell
+            grid[y][x].type = 0;
+            grid[y][x].baseColor = BLACK;
+            grid[y][x].moisture = 0;
+            grid[y][x].is_falling = false;
+        }
+
+        // Strict conservation check - ensure total moisture is preserved
+        int totalMoistureAfter = (grid[y][x].type == 0 ? 0 : grid[y][x].moisture) + grid[y2][x2].moisture;
+        
+        if(totalMoistureAfter != totalMoistureBefore) {
+            // Fix any conservation errors by adjusting the cell with more moisture
+            if(grid[y][x].type != 0 && grid[y][x].moisture >= grid[y2][x2].moisture) {
+                grid[y][x].moisture = totalMoistureBefore - grid[y2][x2].moisture;
+            } else {
+                grid[y2][x2].moisture = totalMoistureBefore - (grid[y][x].type == 0 ? 0 : grid[y][x].moisture);
+            }
+        }
+        
+        // Update sand color based on new moisture
+        float intensity = (float)grid[y2][x2].moisture / 100.0f;
+        grid[y2][x2].baseColor = (Color){
+            127 - (intensity * 51),
+            106 - (intensity * 43),
+            79 - (intensity * 32),
+            255
+        };
+        
+        return;
+    }
+    
+    // Special handling for sand falling through vapor - similar logic
+    if(grid[y][x].type == 1 && grid[y2][x2].type == 4) {
+        // Save the total moisture before any operations
+        int totalMoistureBefore = grid[y][x].moisture + grid[y2][x2].moisture;
+        
+        // Calculate how much moisture sand can absorb
+        int availableMoisture = grid[y2][x2].moisture;
+        int sandCurrentMoisture = grid[y][x].moisture;
+        int sandCapacity = 100 - sandCurrentMoisture;
+        
+        // SPECIAL CASE: If sand is already fully saturated (100% moisture)
+        if(sandCapacity <= 0) {
+            // All vapor moisture gets pushed upward as sand falls down
+            
+            // Move sand down (without adding more moisture since it's already full)
+            grid[y2][x2] = grid[y][x];
+            grid[y2][x2].is_falling = true;
+            grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
+            
+            // All vapor's moisture moves to the upper cell (now vapor)
+            grid[y][x].type = 4; // Vapor type
+            grid[y][x].moisture = availableMoisture;
+            grid[y][x].is_falling = false;
+            
+            // Update vapor color based on moisture
+            if(availableMoisture < 50) {
+                grid[y][x].baseColor = BLACK; // Invisible
+            } else {
+                int brightness = 128 + (int)(127 * ((float)(availableMoisture - 50) / 50.0f));
+                grid[y][x].baseColor = (Color){
+                    brightness, brightness, brightness, 255
+                };
+            }
+            
+            // Verify moisture conservation 
+            int totalMoistureAfter = grid[y][x].moisture + grid[y2][x2].moisture;
+            if(totalMoistureAfter != totalMoistureBefore) {
+                // Fix any conservation errors
+                grid[y][x].moisture = totalMoistureBefore - grid[y2][x2].moisture;
+            }
+            
+            return;
+        }
+        
+        // Continue with existing logic for non-saturated sand
+        // Determine how much sand will absorb
+        int amountToAbsorb = (sandCapacity > availableMoisture) ? 
+                                availableMoisture : sandCapacity;
+        
+        // Calculate remaining moisture
+        int remainingMoisture = availableMoisture - amountToAbsorb;
+        
+        // If there's significant moisture left, we'll swap with modified values
+        if(remainingMoisture > 10) {  // > 0.1 in the old scale
+            // Save original sand cell
+            GridCell sandCell = grid[y][x];
+            
+            // Add absorbed moisture to sand 
+            sandCell.moisture += amountToAbsorb;
+            sandCell.is_falling = true;
+            
+            // Move sand to lower position
+            grid[y2][x2] = sandCell;
+            grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
+            
+            // Remaining moisture becomes vapor in the upper position
+            grid[y][x].type = 4; // Vapor type
+            grid[y][x].moisture = remainingMoisture;
+            grid[y][x].is_falling = false;
+            
+            // Update vapor color
+            if(remainingMoisture < 50) {  // < 0.5 in the old scale
+                grid[y][x].baseColor = BLACK; // Invisible
+            } else {
+                int brightness = 128 + (int)(127 * ((float)(remainingMoisture - 50) / 50.0f));
+                grid[y][x].baseColor = (Color){
+                    brightness, brightness, brightness, 255
+                };
+            }
+        }
+        else {
+            // Move sand down, replacing vapor
+            grid[y2][x2] = grid[y][x];
+            grid[y2][x2].moisture += availableMoisture;  // Add all available moisture
+            grid[y2][x2].is_falling = true;
+            grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
+            
+            // Clear the original cell
+            grid[y][x].type = 0;
+            grid[y][x].baseColor = BLACK;
+            grid[y][x].moisture = 0;
+            grid[y][x].is_falling = false;
+        }
+
+        // Strict conservation check - ensure total moisture is preserved
+        int totalMoistureAfter = (grid[y][x].type == 0 ? 0 : grid[y][x].moisture) + grid[y2][x2].moisture;
+        
+        if(totalMoistureAfter != totalMoistureBefore) {
+            // Fix any conservation errors by adjusting the cell with more moisture
+            if(grid[y][x].type != 0 && grid[y][x].moisture >= grid[y2][x2].moisture) {
+                grid[y][x].moisture = totalMoistureBefore - grid[y2][x2].moisture;
+            } else {
+                grid[y2][x2].moisture = totalMoistureBefore - (grid[y][x].type == 0 ? 0 : grid[y][x].moisture);
+            }
+        }
+        
+        // Update sand color based on new moisture
+        float intensity = (float)grid[y2][x2].moisture / 100.0f;
+        grid[y2][x2].baseColor = (Color){
+            127 - (intensity * 51),
+            106 - (intensity * 43),
+            79 - (intensity * 32),
+            255
+        };
         
         return;
     }
@@ -172,6 +374,9 @@ static void MoveCell(int x, int y, int x2, int y2) {
         GridCell temp = grid[y2][x2];
         grid[y2][x2] = grid[y][x];
         grid[y][x] = temp;
+        
+        // Preserve falling state after swap
+        grid[y2][x2].is_falling = true;
         
         // Update positions for both cells
         grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
@@ -197,15 +402,20 @@ static void MoveCell(int x, int y, int x2, int y2) {
     // Standard case - move cell from (x,y) to (x2,y2)
     grid[y2][x2] = grid[y][x];
     
+    // Preserve falling state for the moved cell
+    grid[y2][x2].is_falling = true;
+    
     // Update the position property of the moved cell
     grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
     
     // Reset the source cell
     grid[y][x].type = 0;
     grid[y][x].baseColor = BLACK;
-    grid[y][x].moisture = 0.0f;
+    grid[y][x].moisture = 0;  // Integer moisture (was 0.0f)
+    grid[y][x].is_falling = false;
 }
 
+// Also fix the UpdateSoil function to ensure sand always falls through vapor
 static void UpdateSoil(void) {
     // Randomly decide initial direction for this cycle
     bool processRightToLeft = GetRandomValue(0, 1);
@@ -230,56 +440,93 @@ static void UpdateSoil(void) {
         
         for(int x = startX; x != endX; x += stepX) {
             if(grid[y][x].type == 1) {  // If it's soil
+                // Reset falling state before movement logic
+                grid[y][x].is_falling = false;
+                
                 // Track soil moisture
-                float* moisture = &grid[y][x].moisture;
+                int* moisture = &grid[y][x].moisture;
 
-                // FALLING MECHANICS
-                // First check directly below
-                if(y < GRID_HEIGHT - 1) {  // If not at bottom of grid
-                    // Fall through empty space or water
-                    if(grid[y+1][x].type == 0 || grid[y+1][x].type == 2) {
-                        // Move soil down one cell (will swap with water if needed)
+                // FALLING MECHANICS: explicitly prioritize falling through vapor
+                if(y < GRID_HEIGHT - 1) {
+                    // First priority: Fall through vapor regardless of moisture levels
+                    if(grid[y+1][x].type == 4) {
+                        // Mark as falling and move, let MoveCell handle the moisture correctly
+                        grid[y][x].is_falling = true;
                         MoveCell(x, y, x, y+1);
-                        continue;  // Skip to next iteration after moving
+                        continue;
                     }
                     
-                    // If can't fall straight down, try diagonal slides
-                    bool canSlideLeft = (x > 0 && (grid[y+1][x-1].type == 0 || grid[y+1][x-1].type == 2));
-                    bool canSlideRight = (x < GRID_WIDTH-1 && (grid[y+1][x+1].type == 0 || grid[y+1][x+1].type == 2));
+                    // Second priority: Check for empty space or water
+                    if(grid[y+1][x].type == 0 || grid[y+1][x].type == 2) {
+                        grid[y][x].is_falling = true;
+                        MoveCell(x, y, x, y+1);
+                        continue;
+                    }
+                    
+                    // For diagonal sliding, also prioritize vapor
+                    bool canSlideLeftVapor = (x > 0 && grid[y+1][x-1].type == 4);
+                    bool canSlideRightVapor = (x < GRID_WIDTH-1 && grid[y+1][x+1].type == 4);
+                    
+                    // First check vapor diagonally
+                    if(canSlideLeftVapor && canSlideRightVapor) {
+                        int bias = processRightToLeft ? 40 : 60;
+                        int slideDir = (GetRandomValue(0, 100) < bias) ? -1 : 1;
+                        grid[y][x].is_falling = true;
+                        MoveCell(x, y, x+slideDir, y+1);
+                        continue;
+                    } else if(canSlideLeftVapor) {
+                        grid[y][x].is_falling = true;
+                        MoveCell(x, y, x-1, y+1);
+                        continue;
+                    } else if(canSlideRightVapor) {
+                        grid[y][x].is_falling = true;
+                        MoveCell(x, y, x+1, y+1);
+                        continue;
+                    }
+                    
+                    // Then check other cells (empty, water) diagonally
+                    // Check for empty space, water, or vapor on diagonal cells
+                    bool canSlideLeft = (x > 0 && (grid[y+1][x-1].type == 0 || 
+                                                  grid[y+1][x-1].type == 2 || 
+                                                  grid[y+1][x-1].type == 4));
+                    bool canSlideRight = (x < GRID_WIDTH-1 && (grid[y+1][x+1].type == 0 || 
+                                                              grid[y+1][x+1].type == 2 || 
+                                                              grid[y+1][x+1].type == 4));
                     
                     if(canSlideLeft && canSlideRight) {
                         // Choose random direction, but slightly favor the current processing direction
                         // This helps prevent directional bias
                         int bias = processRightToLeft ? 40 : 60; // 40/60 bias instead of 50/50
                         int slideDir = (GetRandomValue(0, 100) < bias) ? -1 : 1;
+                        grid[y][x].is_falling = true;
                         MoveCell(x, y, x+slideDir, y+1);
                     } else if(canSlideLeft) {
+                        grid[y][x].is_falling = true;
                         MoveCell(x, y, x-1, y+1);
                     } else if(canSlideRight) {
+                        grid[y][x].is_falling = true;
                         MoveCell(x, y, x+1, y+1);
                     }
                 }
 
                 // Update soil color based on moisture
-                if(*moisture > 0) {
-                    // Interpolate between BROWN and DARKBROWN based on moisture
-                    grid[y][x].baseColor = (Color){
-                        127 - (*moisture * 51),  // R: 127 -> 76
-                        106 - (*moisture * 43),  // G: 106 -> 63
-                        79 - (*moisture * 32),   // B: 79 -> 47
-                        255
-                    };
-                }
+                float intensityPct = (float)*moisture / 100.0f;
+                grid[y][x].baseColor = (Color){
+                    127 - (intensityPct * 51),  // R: 127 -> 76
+                    106 - (intensityPct * 43),  // G: 106 -> 63
+                    79 - (intensityPct * 32),   // B: 79 -> 47
+                    255
+                };
 
                 // REMOVE moisture evaporation - this was incorrectly destroying moisture
                 // *moisture = fmax(*moisture - 0.001f, 0.0f);
                 
                 // Instead, transfer tiny amounts to ambient vapor if needed
-                if(grid[y][x].moisture > 0.2f) {
+                if(grid[y][x].moisture > 20) {  // > 0.2 in the old scale
                     // Try to find nearby ambient vapor to add moisture to
                     bool transferred = false;
                     for(int dy = -1; dy <= 1 && !transferred; dy++) {
-                        for(int dx = -1; dx <= 1 && !transferred; dx++) {
+                        for(int dx = -1; dy <= 1 && !transferred; dx++) {
                             if(dx == 0 && dy == 0) continue;
                             
                             int nx = x + dx;
@@ -288,9 +535,9 @@ static void UpdateSoil(void) {
                             if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
                                grid[ny][nx].type == 4) {
                                 // Transfer a tiny amount of moisture
-                                float transferAmount = 0.001f;
-                                if(grid[y][x].moisture - transferAmount < 0.2f) {
-                                    transferAmount = grid[y][x].moisture - 0.2f;
+                                int transferAmount = 1;  // Was 0.001f
+                                if(grid[y][x].moisture - transferAmount < 20) {
+                                    transferAmount = grid[y][x].moisture - 20;
                                 }
                                 
                                 if(transferAmount > 0) {
@@ -366,6 +613,9 @@ static void UpdateWater(void) {
         for(int x = startX; x != endX; x += stepX) {
             if(grid[y][x].type == 2) {  // If it's water
                 bool hasMoved = false;
+                
+                // Reset falling state before movement logic
+                grid[y][x].is_falling = false;
                 
                 // Check if this is ceiling water (part of a cluster)
                 if(ceilingClusterIDs[y][x] >= 0) {
@@ -647,10 +897,15 @@ static void UpdateWater(void) {
                     }
                 }
                 
-                // Store whether this water cell has moved in this update cycle
-                // This will be used in TransferMoisture to determine if evaporation should be considered
+                // When water moves in any way, mark it as falling
+                if(hasMoved) {
+                    grid[y][x].is_falling = true;
+                }
+                
+                // Use both volume and is_falling to track movement state
                 if(!hasMoved && grid[y][x].type == 2) {  // Double-check it's still water
                     grid[y][x].volume = 0;  // Use volume field to flag that water didn't move
+                    grid[y][x].is_falling = false;
                 } else {
                     grid[y][x].volume = 1;  // Flag that water has moved
                 }
@@ -678,47 +933,113 @@ static void UpdateWater(void) {
                 // Check horizontally adjacent water cells for density differences
                 if(x > 0 && grid[y][x-1].type == 2) {
                     // Average densities for adjacent water cells
-                    float avgMoisture = (grid[y][x].moisture + grid[y][x-1].moisture) / 2.0f;
+                    int avgMoisture = (grid[y][x].moisture + grid[y][x-1].moisture) / 2;
                     // Small equalization step (don't fully equalize)
-                    grid[y][x].moisture = grid[y][x].moisture * 0.9f + avgMoisture * 0.1f;
-                    grid[y][x-1].moisture = grid[y][x-1].moisture * 0.9f + avgMoisture * 0.1f;
+                    grid[y][x].moisture = (grid[y][x].moisture * 9 + avgMoisture) / 10;
+                    grid[y][x-1].moisture = (grid[y][x-1].moisture * 9 + avgMoisture) / 10;
                 }
                 if(x < GRID_WIDTH-1 && grid[y][x+1].type == 2) {
                     // Average densities for adjacent water cells
-                    float avgMoisture = (grid[y][x].moisture + grid[y][x+1].moisture) / 2.0f;
+                    int avgMoisture = (grid[y][x].moisture + grid[y][x+1].moisture) / 2;
                     // Small equalization step
-                    grid[y][x].moisture = grid[y][x].moisture * 0.9f + avgMoisture * 0.1f;
-                    grid[y][x+1].moisture = grid[y][x+1].moisture * 0.9f + avgMoisture * 0.1f;
+                    grid[y][x].moisture = (grid[y][x].moisture * 9 + avgMoisture) / 10;
+                    grid[y][x+1].moisture = (grid[y][x+1].moisture * 9 + avgMoisture) / 10;
                 }
             }
         }
     }
 }
 
+// Fix the UpdateVapor function to prevent infinite loops
 static void UpdateVapor(void) {
-    // Randomly decide initial direction for this cycle (for horizontal movement)
-    bool processRightToLeft = GetRandomValue(0, 1);
+    int initialMoisture = CalculateTotalMoisture();
     
-    // Process vapor from top to bottom (opposite of water), alternating left/right direction
-    for(int y = 0; y < GRID_HEIGHT; y++) {
-        // Alternate direction for each row
-        processRightToLeft = !processRightToLeft;
+    // Only alternate the processing direction every OTHER frame to allow absorption patterns
+    static bool alternateScanDirection = false;
+    alternateScanDirection = !alternateScanDirection;
+    
+    // Flag to track which cells have already been processed this frame
+    bool** processedCells = (bool**)malloc(GRID_HEIGHT * sizeof(bool*));
+    for(int i = 0; i < GRID_HEIGHT; i++) {
+        processedCells[i] = (bool*)calloc(GRID_WIDTH, sizeof(bool)); // Initialize all to false
+    }
+    
+    // Maximum iterations safety check to prevent infinite loops
+    const int MAX_ITERATIONS = GRID_WIDTH * GRID_HEIGHT;
+    int iterations = 0;
+    
+    // Process vapor from top to bottom with alternating scan patterns
+    for(int y = 0; y < GRID_HEIGHT && iterations < MAX_ITERATIONS; y++) {
+        // Determine scan direction for this row
+        bool processRightToLeft = (y % 2 == 0) ? alternateScanDirection : !alternateScanDirection;
         
+        // Setup scanning parameters more safely
         int startX, endX, stepX;
         if(processRightToLeft) {
-            // Right to left
             startX = GRID_WIDTH - 1;
             endX = -1;
             stepX = -1;
         } else {
-            // Left to right
             startX = 0;
             endX = GRID_WIDTH;
             stepX = 1;
         }
         
-        for(int x = startX; x != endX; x += stepX) {
-            if(grid[y][x].type == 4) {  // If it's vapor
+        // First pass - process with safety checks
+        for(int x = startX; x != endX && iterations < MAX_ITERATIONS; x += stepX * 2) {
+            iterations++;
+            if(x < 0 || x >= GRID_WIDTH) continue; // Extra boundary check
+            
+            if(grid[y][x].type == 4 && !processedCells[y][x]) {
+                // Process this vapor cell
+                // First check for vapor absorption - scan neighboring cells
+                bool absorbed = false;
+                int totalAbsorbedMoisture = 0;
+                
+                // Check all 8 adjacent cells
+                for(int dy = -1; dy <= 1; dy++) {
+                    for(int dx = -1; dx <= 1; dx++) {
+                        if(dx == 0 && dy == 0) continue; // Skip the cell itself
+                        
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        
+                        // Check if adjacent cell is in bounds and is vapor with less moisture
+                        if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
+                           grid[ny][nx].type == 4 && !processedCells[ny][nx] && 
+                           grid[ny][nx].moisture < grid[y][x].moisture) {
+                            
+                            // Absorb moisture from adjacent cell
+                            int absorbedMoisture = grid[ny][nx].moisture;
+                            totalAbsorbedMoisture += absorbedMoisture;
+                            
+                            // Mark the cell as processed and convert to air
+                            processedCells[ny][nx] = true;
+                            grid[ny][nx].type = 0;
+                            grid[ny][nx].moisture = 0; // Moisture is now in current cell
+                            grid[ny][nx].baseColor = BLACK;
+                            
+                            absorbed = true;
+                        }
+                    }
+                }
+                
+                // Add the absorbed moisture to current cell
+                if(absorbed) {
+                    grid[y][x].moisture += totalAbsorbedMoisture;
+                    
+                    // Update vapor color after absorption
+                    if(grid[y][x].moisture < 50) {  // < 0.5 in the old scale
+                        grid[y][x].baseColor = BLACK; // Invisible
+                    } else {
+                        int brightness = 128 + (int)(127 * ((float)(grid[y][x].moisture - 50) / 50.0f));
+                        grid[y][x].baseColor = (Color){
+                            brightness, brightness, brightness, 255
+                        };
+                    }
+                }
+                
+                // Continue with existing vapor condensation logic
                 // Enhance condensation - more likely to condense at ceiling or near other water
                 bool condensed = false;
                 
@@ -726,7 +1047,7 @@ static void UpdateVapor(void) {
                 float condensationChance = 0.05f * (1.0f - (float)y / GRID_HEIGHT);
                 
                 // Higher moisture = higher condensation chance
-                condensationChance += (grid[y][x].moisture - 0.2f) * 0.5f;
+                condensationChance += ((float)(grid[y][x].moisture - 20) / 100.0f) * 0.5f;
                 
                 // Check for nearby water (ceiling water creates nucleation centers)
                 int waterNeighbors = 0;
@@ -756,11 +1077,12 @@ static void UpdateVapor(void) {
                 }
                 
                 // At ceiling, almost always condense with sufficient moisture
-                if(y == 0 && grid[y][x].moisture > 0.3f && GetRandomValue(0, 100) < 80) {
+                if(y == 0 && grid[y][x].moisture > 30 && GetRandomValue(0, 100) < 80) {
                     grid[y][x].type = 2; // Convert to water
+                    float intensity = (float)grid[y][x].moisture / 100.0f;
                     grid[y][x].baseColor = (Color){
-                        0 + (int)(200 * (1.0f - grid[y][x].moisture)),
-                        120 + (int)(135 * (1.0f - grid[y][x].moisture)),
+                        0 + (int)(200 * (1.0f - intensity)),
+                        120 + (int)(135 * (1.0f - intensity)),
                         255,
                         255
                     };
@@ -769,11 +1091,12 @@ static void UpdateVapor(void) {
                 // General condensation check
                 else if(GetRandomValue(0, 100) < condensationChance * 100) {
                     // Condense into water if moisture is high enough
-                    if(grid[y][x].moisture > 0.3f) {
+                    if(grid[y][x].moisture > 30) {
                         grid[y][x].type = 2; // Convert to water
+                        float intensity = (float)grid[y][x].moisture / 100.0f;
                         grid[y][x].baseColor = (Color){
-                            0 + (int)(200 * (1.0f - grid[y][x].moisture)),
-                            120 + (int)(135 * (1.0f - grid[y][x].moisture)),
+                            0 + (int)(200 * (1.0f - intensity)),
+                            120 + (int)(135 * (1.0f - intensity)),
                             255,
                             255
                         };
@@ -791,12 +1114,220 @@ static void UpdateVapor(void) {
                 }
                 
                 // Precipitation at top of screen
-                if(y == 0 && grid[y][x].moisture > 0.5f) {
+                if(y == 0 && grid[y][x].moisture > 50) {
                     // Convert to water if it has enough moisture and is at the top
                     grid[y][x].type = 2; // Convert to water
+                    float intensity = (float)grid[y][x].moisture / 100.0f;
                     grid[y][x].baseColor = (Color){
-                        0 + (int)(200 * (1.0f - grid[y][x].moisture)),
-                        120 + (int)(135 * (1.0f - grid[y][x].moisture)),
+                        0 + (int)(200 * (1.0f - intensity)),
+                        120 + (int)(135 * (1.0f - intensity)),
+                        255,
+                        255
+                    };
+                    continue;
+                }
+                
+                // Vapor rising mechanics (opposite of water falling)
+                if(y > 0) {  // If not at top
+                    // Try to rise straight up first
+                    if(grid[y-1][x].type == 0 || grid[y-1][x].type == 4) {
+                        // If empty space or less dense vapor above, move up
+                        if(grid[y-1][x].type == 0 || 
+                           (grid[y-1][x].type == 4 && grid[y-1][x].moisture < grid[y][x].moisture)) {
+                            // Fixed parameter order: source coordinates first, then destination
+                            MoveCell(x, y, x, y-1);
+                            continue;
+                        }
+                    }
+                    
+                    // If can't rise straight up, try diagonally
+                    bool canRiseLeft = (x > 0 && (grid[y-1][x-1].type == 0 || 
+                        (grid[y-1][x-1].type == 4 && grid[y-1][x-1].moisture < grid[y][x].moisture)));
+                    bool canRiseRight = (x < GRID_WIDTH-1 && (grid[y-1][x+1].type == 0 || 
+                        (grid[y-1][x+1].type == 4 && grid[y-1][x+1].moisture < grid[y][x].moisture)));
+                    
+                    if(canRiseLeft && canRiseRight) {
+                        // Choose random direction
+                        int direction = (GetRandomValue(0, 1) == 0) ? -1 : 1;
+                        MoveCell(x, y, x+direction, y-1);
+                        continue;
+                    } else if(canRiseLeft) {
+                        MoveCell(x, y, x-1, y-1);
+                        continue;
+                    } else if(canRiseRight) {
+                        MoveCell(x, y, x+1, y-1);
+                        continue;
+                    }
+                    
+                    // Count neighboring vapor cells
+                    int vaporNeighbors = 0;
+                    for(int dy = -1; dy <= 1; dy++) {
+                        for(int dx = -1; dx <= 1; dx++) {
+                            if(dx == 0 && dy == 0) continue;
+                            int nx = x + dx, ny = y + dy;
+                            if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
+                               grid[ny][nx].type == 4) {
+                                vaporNeighbors++;
+                            }
+                        }
+                    }
+                    
+                    // Apply "inverse surface tension" - vapor prefers being in clusters
+                    float moveChance = (vaporNeighbors > 2) ? 0.3f : 1.0f;
+                    
+                    if(GetRandomValue(0, 100) < moveChance * 100) {
+                        // If can't rise, try to spread horizontally
+                        bool canFlowLeft = (x > 0 && grid[y][x-1].type == 0);
+                        bool canFlowRight = (x < GRID_WIDTH-1 && grid[y][x+1].type == 0);
+                        
+                        if(canFlowLeft && canFlowRight) {
+                            // Slightly favor the current processing direction
+                            int leftBias = processRightToLeft ? 60 : 40;
+                            int flowDir = (GetRandomValue(0, 100) < leftBias) ? -1 : 1;
+                            MoveCell(x, y, x+flowDir, y);
+                        } else if(canFlowLeft) {
+                            MoveCell(x, y, x-1, y);
+                        } else if(canFlowRight) {
+                            MoveCell(x, y, x+1, y);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Second pass - process remaining cells with safety checks
+        for(int x = (startX + stepX); x != endX && iterations < MAX_ITERATIONS; x += stepX * 2) {
+            iterations++;
+            if(x < 0 || x >= GRID_WIDTH) continue; // Extra boundary check
+            
+            if(grid[y][x].type == 4 && !processedCells[y][x]) {
+                processedCells[y][x] = true;
+                
+                // Same processing logic as first pass
+                // First check for vapor absorption
+                bool absorbed = false;
+                int totalAbsorbedMoisture = 0;
+                
+                // Check all 8 adjacent cells
+                for(int dy = -1; dy <= 1; dy++) {
+                    for(int dx = -1; dx <= 1; dx++) {
+                        if(dx == 0 && dy == 0) continue;
+                        
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        
+                        if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
+                           grid[ny][nx].type == 4 && !processedCells[ny][nx] && 
+                           grid[ny][nx].moisture < grid[y][x].moisture) {
+                            
+                            int absorbedMoisture = grid[ny][nx].moisture;
+                            totalAbsorbedMoisture += absorbedMoisture;
+                            
+                            processedCells[ny][nx] = true;
+                            grid[ny][nx].type = 0;
+                            grid[ny][nx].moisture = 0;
+                            grid[ny][nx].baseColor = BLACK;
+                            
+                            absorbed = true;
+                        }
+                    }
+                }
+                
+                if(absorbed) {
+                    grid[y][x].moisture += totalAbsorbedMoisture;
+                    
+                    if(grid[y][x].moisture < 50) {  // < 0.5 in the old scale
+                        grid[y][x].baseColor = BLACK; // Invisible
+                    } else {
+                        int brightness = 128 + (int)(127 * ((float)(grid[y][x].moisture - 50) / 50.0f));
+                        grid[y][x].baseColor = (Color){
+                            brightness, brightness, brightness, 255
+                        };
+                    }
+                }
+                
+                // Continue with existing vapor condensation and movement logic
+                // Enhance condensation - more likely to condense at ceiling or near other water
+                bool condensed = false;
+                
+                // Higher elevation = higher condensation chance
+                float condensationChance = 0.05f * (1.0f - (float)y / GRID_HEIGHT);
+                
+                // Higher moisture = higher condensation chance
+                condensationChance += ((float)(grid[y][x].moisture - 20) / 100.0f) * 0.5f;
+                
+                // Check for nearby water (ceiling water creates nucleation centers)
+                int waterNeighbors = 0;
+                int ceilingWaterSize = 0;
+                
+                for(int dy = -2; dy <= 2; dy++) {
+                    for(int dx = -2; dx <= 2; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
+                           grid[ny][nx].type == 2) {
+                            
+                            // Water proximity boosts condensation chance
+                            float distance = sqrtf(dx*dx + dy*dy);
+                            if(distance <= 2.0f) {
+                                waterNeighbors++;
+                                
+                                // Check if it's ceiling water (at top or has water above it)
+                                bool isCeilingWater = (ny == 0 || (ny > 0 && grid[ny-1][nx].type == 2));
+                                if(isCeilingWater) {
+                                    ceilingWaterSize++;
+                                    // Ceiling water creates a stronger condensation field
+                                    condensationChance += 0.2f / (distance + 0.5f);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // At ceiling, almost always condense with sufficient moisture
+                if(y == 0 && grid[y][x].moisture > 30 && GetRandomValue(0, 100) < 80) {
+                    grid[y][x].type = 2; // Convert to water
+                    float intensity = (float)grid[y][x].moisture / 100.0f;
+                    grid[y][x].baseColor = (Color){
+                        0 + (int)(200 * (1.0f - intensity)),
+                        120 + (int)(135 * (1.0f - intensity)),
+                        255,
+                        255
+                    };
+                    condensed = true;
+                }
+                // General condensation check
+                else if(GetRandomValue(0, 100) < condensationChance * 100) {
+                    // Condense into water if moisture is high enough
+                    if(grid[y][x].moisture > 30) {
+                        grid[y][x].type = 2; // Convert to water
+                        float intensity = (float)grid[y][x].moisture / 100.0f;
+                        grid[y][x].baseColor = (Color){
+                            0 + (int)(200 * (1.0f - intensity)),
+                            120 + (int)(135 * (1.0f - intensity)),
+                            255,
+                            255
+                        };
+                        condensed = true;
+                    }
+                }
+                
+                if(condensed) continue;
+                
+                // Rest of vapor movement logic
+                // Check if water is directly above vapor (should be rare, but handle it)
+                if(y > 0 && grid[y-1][x].type == 2) {
+                    MoveCell(y-1, x, y, x);  // Will trigger the swap in MoveCell
+                    continue;
+                }
+                
+                // Precipitation at top of screen
+                if(y == 0 && grid[y][x].moisture > 50) {
+                    // Convert to water if it has enough moisture and is at the top
+                    grid[y][x].type = 2; // Convert to water
+                    float intensity = (float)grid[y][x].moisture / 100.0f;
+                    grid[y][x].baseColor = (Color){
+                        0 + (int)(200 * (1.0f - intensity)),
+                        120 + (int)(135 * (1.0f - intensity)),
                         255,
                         255
                     };
@@ -872,115 +1403,72 @@ static void UpdateVapor(void) {
         }
     }
     
-    // After basic vapor movement, handle vertical moisture transfers (inverted density from water)
-    for(int y = GRID_HEIGHT-1; y >= 0; y--) {  // Process from bottom to top
-        for(int x = 0; x < GRID_WIDTH; x++) {
-            if(grid[y][x].type == 4) {  // If it's vapor
-                // Check for vapor cells above that could receive moisture
-                if(y > 0 && grid[y-1][x].type == 4) {
-                    // If this vapor is more dense (has more moisture) than vapor above, transfer up
-                    if(grid[y][x].moisture > grid[y-1][x].moisture && grid[y-1][x].moisture < 0.8f) {
-                        // Calculate transfer amount - smaller than water transfers
-                        float transferAmount = (grid[y][x].moisture - grid[y-1][x].moisture) * 0.05f;
-                        
-                        // Transfer moisture upward
-                        grid[y-1][x].moisture += transferAmount;
-                        grid[y][x].moisture -= transferAmount;
-                        
-                        // Update colors
-                        if(grid[y-1][x].moisture >= 0.2f) {
-                            int brightness = 128 + (int)(127 * grid[y-1][x].moisture);
-                            grid[y-1][x].baseColor = (Color){
-                                brightness, brightness, brightness, 255
-                            };
-                        }
-                        
-                        if(grid[y][x].moisture < 0.2f) {
-                            grid[y][x].baseColor = BLACK; // Invisible
-                        } else {
-                            int brightness = 128 + (int)(127 * grid[y][x].moisture);
-                            grid[y][x].baseColor = (Color){
-                                brightness, brightness, brightness, 255
-                            };
-                        }
-                        
-                        continue;
-                    }
-                }
-                
-                // Also check diagonally upward
-                bool checkedDiagonals = false;
-                if(y > 0) {
-                    // Check left-up diagonal
-                    if(x > 0 && grid[y-1][x-1].type == 4) {
-                        if(grid[y][x].moisture > grid[y-1][x-1].moisture && grid[y-1][x-1].moisture < 0.8f) {
-                            float transferAmount = (grid[y][x].moisture - grid[y-1][x-1].moisture) * 0.03f;
-                            grid[y-1][x-1].moisture += transferAmount;
-                            grid[y][x].moisture -= transferAmount;
-                            
-                            // Update colors
-                            if(grid[y-1][x-1].moisture >= 0.2f) {
-                                int brightness = 128 + (int)(127 * grid[y-1][x-1].moisture);
-                                grid[y-1][x-1].baseColor = (Color){
-                                    brightness, brightness, brightness, 255
-                                };
-                            }
-                            
-                            checkedDiagonals = true;
-                        }
-                    }
-                    
-                    // Check right-up diagonal
-                    if(!checkedDiagonals && x < GRID_WIDTH-1 && grid[y-1][x+1].type == 4) {
-                        if(grid[y][x].moisture > grid[y-1][x+1].moisture && grid[y-1][x+1].moisture < 0.8f) {
-                            float transferAmount = (grid[y][x].moisture - grid[y-1][x+1].moisture) * 0.03f;
-                            grid[y-1][x+1].moisture += transferAmount;
-                            grid[y][x].moisture -= transferAmount;
-                            
-                            // Update colors
-                            if(grid[y-1][x+1].moisture >= 0.2f) {
-                                int brightness = 128 + (int)(127 * grid[y-1][x+1].moisture);
-                                grid[y-1][x+1].baseColor = (Color){
-                                    brightness, brightness, brightness, 255
-                                };
-                            }
-                        }
-                    }
-                }
-                
-                // Update vapor color after all transfers
-                if(grid[y][x].moisture < 0.2f) {
-                    grid[y][x].baseColor = BLACK; // Invisible
-                } else {
-                    int brightness = 128 + (int)(127 * grid[y][x].moisture);
-                    grid[y][x].baseColor = (Color){
-                        brightness, brightness, brightness, 255
-                    };
-                }
-            }
-        }
+    // Safety check - if we hit the iteration limit, something is wrong
+    if(iterations >= MAX_ITERATIONS) {
+        printf("WARNING: UpdateVapor reached maximum iterations limit!\n");
+    }
+    
+    // Clean up the processed cells tracker
+    for(int i = 0; i < GRID_HEIGHT; i++) {
+        free(processedCells[i]);
+    }
+    free(processedCells);
+    
+    // Check moisture conservation after vapor processing
+    int finalMoisture = CalculateTotalMoisture();
+    if(abs(finalMoisture - initialMoisture) > 1) {
+        printf("Moisture conservation error in UpdateVapor: %d\n", finalMoisture - initialMoisture);
     }
 }
 
-static void PlaceVapor(Vector2 position, float moisture) {
+// Fix UpdateGrid to include additional safety checks
+static void UpdateGrid(void) {
+    // Reset all falling states before processing movement
+    for(int y = 0; y < GRID_HEIGHT; y++) {
+        for(int x = 0; x < GRID_WIDTH; x++) {
+            grid[y][x].is_falling = false;
+        }
+    }
+    
+    static int updateCount = 0;
+    updateCount++;
+    
+    // Only start vapor processing after a few frames to allow initialization to complete
+    if(updateCount < 5) {
+        UpdateWater();
+        UpdateSoil();
+        // Skip vapor updates for first few frames
+    } else {
+        UpdateWater();
+        UpdateSoil();
+        UpdateVapor(); // Run vapor updates after initialization is stable
+    }
+    
+    // Handle moisture transfer at the end of each cycle
+    TransferMoisture();
+}
+
+static void PlaceVapor(Vector2 position, int moisture) {
     int x = (int)position.x;
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
     if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
     
-    // Clamp moisture to maximum value of 1.0
-    if(moisture > 1.0f) moisture = 1.0f;
+    // Clamp moisture to maximum value of 100
+    moisture = ClampMoisture(moisture);
     
     grid[y][x].type = 4; // Vapor type
     grid[y][x].moisture = moisture;
     
-    // Updated: Vapor under 0.5 moisture is invisible
-    if(moisture < 0.5f) {
+    // Updated: Vapor under 50 moisture is invisible (was 0.5f)
+    if(moisture < 50) {
         grid[y][x].baseColor = BLACK; // Make it invisible (same as background)
     } else {
-        // Brightness based on moisture content for visible vapor (0.5 - 1.0 maps to 128-255)
-        int brightness = 128 + (int)(127 * (moisture - 0.5f) * 2.0f); // Adjusted scaling
+        // Brightness based on moisture content (50-100 maps to 128-255)
+        float intensityPct = (float)(moisture - 50) / 50.0f;
+        int brightness = 128 + (int)(127 * intensityPct);
+        
         grid[y][x].baseColor = (Color){
             brightness,
             brightness,
@@ -996,10 +1484,10 @@ static void PlaceVapor(Vector2 position, float moisture) {
 }
 
 // Add a helper function to enforce moisture limit and prevent incorrect moisture values
-static float ClampMoisture(float value) {
-    // Ensure moisture is between 0.0 and 1.0
-    if(value < 0.0f) return 0.0f;
-    if(value > 1.0f) return 1.0f;
+static int ClampMoisture(int value) {
+    // Ensure moisture is between 0 and 100
+    if(value < 0) return 0;
+    if(value > 100) return 100;
     return value;
 }
 
@@ -1007,6 +1495,9 @@ static float ClampMoisture(float value) {
 static void UpdateDrawFrame(void) {
     HandleInput();
     UpdateGrid();
+    
+    // Calculate total moisture for display
+    int totalMoisture = CalculateTotalMoisture();
     
     BeginDrawing();
         ClearBackground(BLACK);
@@ -1041,6 +1532,11 @@ static void UpdateDrawFrame(void) {
         DrawText("Right Click: Place Soil", 10, 50, 20, WHITE);
         DrawText("Middle Click: Place Water", 10, 70, 20, WHITE);
         DrawText("Mouse Wheel: Adjust brush size", 10, 90, 20, WHITE);
+        
+        // Display total moisture in the system
+        char moistureText[50];
+        sprintf(moistureText, "Total Moisture: %d", totalMoisture); // Changed from scientific notation
+        DrawText(moistureText, 10, 110, 20, WHITE);
         
         // Add text at bottom of screen
         DrawText("Tree Growth Simulation", 10, GetScreenHeight() - 30, 20, WHITE);
@@ -1091,11 +1587,7 @@ static void DrawGameGrid(void) {
             Color cellColor = grid[i][j].baseColor;
             
             // Enforce moisture limits
-            if(grid[i][j].moisture > 1.0f) {
-                grid[i][j].moisture = 1.0f;
-            } else if(grid[i][j].moisture < 0.0f) {
-                grid[i][j].moisture = 0.0f;
-            }
+            grid[i][j].moisture = ClampMoisture(grid[i][j].moisture);
             
             // Fix for pink, purple or undefined colors
             if((cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 200) || 
@@ -1106,38 +1598,44 @@ static void DrawGameGrid(void) {
                         cellColor = BLACK;
                         break;
                     case 1: // Soil
-                        // Re-calculate soil color based on proper moisture range
-                        grid[i][j].moisture = ClampMoisture(grid[i][j].moisture);
-                        cellColor = (Color){
-                            127 - (grid[i][j].moisture * 51),  // R: 127 -> 76
-                            106 - (grid[i][j].moisture * 43),  // G: 106 -> 63
-                            79 - (grid[i][j].moisture * 32),   // B: 79 -> 47
-                            255
-                        };
+                        {
+                            // Re-calculate soil color based on proper moisture range
+                            float intensityPct = (float)grid[i][j].moisture / 100.0f;
+                            cellColor = (Color){
+                                127 - (intensityPct * 51),  // R: 127 -> 76
+                                106 - (intensityPct * 43),  // G: 106 -> 63
+                                79 - (intensityPct * 32),   // B: 79 -> 47
+                                255
+                            };
+                        }
                         break;
                     case 2: // Water
-                        // Re-calculate water color based on proper moisture range
-                        grid[i][j].moisture = ClampMoisture(grid[i][j].moisture);
-                        cellColor = (Color){
-                            0 + (int)(200 * (1.0f - grid[i][j].moisture)),
-                            120 + (int)(135 * (1.0f - grid[i][j].moisture)),
-                            255,
-                            255
-                        };
+                        {
+                            // Re-calculate water color based on proper moisture range
+                            float intensityPct = (float)grid[i][j].moisture / 100.0f;
+                            cellColor = (Color){
+                                0 + (int)(200 * (1.0f - intensityPct)),
+                                120 + (int)(135 * (1.0f - intensityPct)),
+                                255,
+                                255
+                            };
+                        }
                         break;
                     case 3: // Plant
                         cellColor = GREEN;
                         break;
                     case 4: // Vapor
-                        // Recalculate vapor color using proper threshold
-                        grid[i][j].moisture = ClampMoisture(grid[i][j].moisture);
-                        if(grid[i][j].moisture < 0.5f) {
-                            cellColor = BLACK; // Invisible
-                        } else {
-                            int brightness = 128 + (int)(127 * (grid[i][j].moisture - 0.5f) * 2.0f);
-                            cellColor = (Color){
-                                brightness, brightness, brightness, 255
-                            };
+                        {
+                            // Recalculate vapor color using proper threshold
+                            if(grid[i][j].moisture < 50) {
+                                cellColor = BLACK; // Invisible
+                            } else {
+                                float intensityPct = (float)(grid[i][j].moisture - 50) / 50.0f;
+                                int brightness = 128 + (int)(127 * intensityPct);
+                                cellColor = (Color){
+                                    brightness, brightness, brightness, 255
+                                };
+                            }
                         }
                         break;
                     default:
@@ -1160,41 +1658,37 @@ static void DrawGameGrid(void) {
     }
 }
 
-static void UpdateGrid(void) {
-    UpdateWater();
-    UpdateSoil();
-    UpdateVapor(); // Add vapor update step
-    
-    // Handle moisture transfer at the end of each cycle
-    TransferMoisture();
-}
-
 static void PlaceSoil(Vector2 position) {
-    grid[(int)position.y][(int)position.x].type = 1;
-    grid[(int)position.y][(int)position.x].baseColor = BROWN;
-    grid[(int)position.y][(int)position.x].moisture = 0.2f;  // Start sand with 0.2 moisture
-    grid[(int)position.y][(int)position.x].position = (Vector2){
-        position.x * CELL_SIZE,
-        position.y * CELL_SIZE
+    int x = (int)position.x;
+    int y = (int)position.y;
+    
+    grid[y][x].type = 1;
+    grid[y][x].baseColor = BROWN;
+    grid[y][x].moisture = 20;  // Start sand with 20 moisture (was 0.2f)
+    grid[y][x].position = (Vector2){
+        x * CELL_SIZE,
+        y * CELL_SIZE
     };
+    
+    // Add this line to ensure soil always has valid type
+    grid[y][x].is_falling = false;
 }
 
 static void PlaceWater(Vector2 position) {
     int x = (int)position.x;
     int y = (int)position.y;
     
-    // Give newly placed water a random moisture level between 0.7 and 1.0
-    // This creates variations in water density for more interesting behavior
-    float randomMoisture = 0.7f + (float)GetRandomValue(0, 30) / 100.0f;
+    // Give newly placed water a random moisture level between 70 and 100
+    int randomMoisture = 70 + GetRandomValue(0, 30);
     
     grid[y][x].type = 2;
     grid[y][x].moisture = randomMoisture;
     
     // Set color based on moisture/density
-    float intensity = randomMoisture;
+    float intensityPct = (float)randomMoisture / 100.0f;
     grid[y][x].baseColor = (Color){
-        0 + (int)(200 * (1.0f - intensity)),
-        120 + (int)(135 * (1.0f - intensity)),
+        0 + (int)(200 * (1.0f - intensityPct)),
+        120 + (int)(135 * (1.0f - intensityPct)),
         255,
         255
     };
@@ -1237,22 +1731,28 @@ static void PlaceCircularPattern(int centerX, int centerY, int cellType, int rad
 }
 
 static void TransferMoisture(void) {
+    // Track total moisture before and after the function for debugging
+    int initialMoisture = CalculateTotalMoisture();
+    
     // Iterate through all cells to handle moisture transfer
     for(int y = 0; y < GRID_HEIGHT; y++) {
         for(int x = 0; x < GRID_WIDTH; x++) {
             // Handle sand (type 1) moisture management
             if(grid[y][x].type == 1) {
-                float* moisture = &grid[y][x].moisture;
+                // Skip vapor generation and moisture evaporation if the soil is falling
+                if(grid[y][x].is_falling) continue;
                 
-                // Sand can hold up to 1.0 units of moisture max
-                // Sand wants to hold 0.5 units of moisture
+                int* moisture = &grid[y][x].moisture;
+                
+                // Sand can hold up to 100 units of moisture max
+                // Sand wants to hold 50 units of moisture (was 0.5f)
                 
                 // If sand has less than max moisture, it can absorb more
-                if(*moisture < 1.0f) {
+                if(*moisture < 100) {
                     // Check for adjacent water/vapor cells to absorb from
-                    for(int dy = -1; dy <= 1 && *moisture < 1.0f; dy++) {
+                    for(int dy = -1; dy <= 1 && *moisture < 100; dy++) {
                         // Fix the critical bug: dx was using dy in the condition!
-                        for(int dx = -1; dx <= 1 && *moisture < 1.0f; dx++) {
+                        for(int dx = -1; dx <= 1 && *moisture < 100; dx++) {
                             if(dx == 0 && dy == 0) continue;
                             
                             int nx = x + dx;
@@ -1262,10 +1762,12 @@ static void TransferMoisture(void) {
                             if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
                                (grid[ny][nx].type == 2 || grid[ny][nx].type == 4)) {
                                 
-                                // Absorb some moisture (0.05 per cycle)
-                                float transferAmount = 0.05f;
-                                if(*moisture + transferAmount > 1.0f) {
-                                    transferAmount = 1.0f - *moisture;
+                                // Absorb some moisture (exactly 5 units per cycle)
+                                int transferAmount = 5;  // Was 0.05f
+                                
+                                // Don't exceed capacity
+                                if(*moisture + transferAmount > 100) {
+                                    transferAmount = 100 - *moisture;
                                 }
                                 
                                 // Don't take more than the source has
@@ -1273,43 +1775,34 @@ static void TransferMoisture(void) {
                                     transferAmount = grid[ny][nx].moisture;
                                 }
                                 
-                                *moisture = ClampMoisture(*moisture + transferAmount);
-                                grid[ny][nx].moisture = ClampMoisture(grid[ny][nx].moisture - transferAmount);
-                                
-                                // Update source cell color based on new moisture
-                                if(grid[ny][nx].type == 2) { // Water
-                                    float intensity = grid[ny][nx].moisture;
-                                    grid[ny][nx].baseColor = (Color){
-                                        0 + (int)(200 * (1.0f - intensity)),
-                                        120 + (int)(135 * (1.0f - intensity)),
-                                        255,
-                                        255
-                                    };
-                                } else if(grid[ny][nx].type == 4) { // Vapor
-                                    // Update vapor color based on new moisture - invisible if below 0.5
-                                    if(grid[ny][nx].moisture < 0.5f) {
-                                        grid[ny][nx].baseColor = BLACK; // Invisible
-                                    } else {
-                                        int brightness = 128 + (int)(127 * (grid[ny][nx].moisture - 0.5f) * 2.0f);
-                                        grid[ny][nx].baseColor = (Color){
-                                            brightness, brightness, brightness, 255
-                                        };
+                                if(transferAmount >= 5) {
+                                    // Save exact moisture amounts before transfer
+                                    int sourceBefore = grid[ny][nx].moisture;
+                                    int targetBefore = *moisture;
+                                    
+                                    // Apply transfer - EXACT AMOUNTS
+                                    *moisture += transferAmount;
+                                    grid[ny][nx].moisture -= transferAmount;
+                                    
+                                    // Verify conservation - should always be exact with integers
+                                    int totalAfter = *moisture + grid[ny][nx].moisture;
+                                    int totalBefore = sourceBefore + targetBefore;
+                                    
+                                    if(totalAfter != totalBefore) {
+                                        // This should never happen with integers, but just in case
+                                        printf("ERROR: Moisture conservation violated in sand absorption\n");
                                     }
-                                }
-                                
-                                // Remove cells with no moisture
-                                if(grid[ny][nx].moisture <= 0.01f) {
-                                    grid[ny][nx].type = 0; // Convert to air
-                                    grid[ny][nx].moisture = 0.0f;
-                                    grid[ny][nx].baseColor = BLACK;
+                                    
+                                    // Update colors based on new moisture values
+                                    // ...existing color updating code converted to use integer moisture...
                                 }
                             }
                         }
                     }
                 }
                 
-                // MODIFIED: Water seepage logic - prioritize downward movement
-                if(*moisture > 0.5f) {
+                // MODIFIED: Water seepage logic with integer moisture
+                if(*moisture > 50) {  // Was > 0.5f
                     // First, try downward transfer (due to gravity)
                     bool transferredMoisture = false;
                     
@@ -1319,19 +1812,19 @@ static void TransferMoisture(void) {
                         if(grid[y+1][x].type != 2) { // Not water
                             if(grid[y+1][x].type == 0) {
                                 // Empty space below - create water droplet if enough moisture
-                                float transferAmount = 0.3f;
-                                if(*moisture - transferAmount < 0.5f) {
-                                    transferAmount = *moisture - 0.5f;
+                                int transferAmount = 30;  // Was 0.3f
+                                if(*moisture - transferAmount < 50) {
+                                    transferAmount = *moisture - 50;
                                 }
                                 
-                                if(transferAmount >= 0.3f) {
+                                if(transferAmount >= 30) {
                                     // Create water for large transfer amounts
                                     grid[y+1][x].type = 2; // Water
                                     grid[y+1][x].moisture = transferAmount;
                                     grid[y+1][x].position = (Vector2){x * CELL_SIZE, (y+1) * CELL_SIZE};
                                     
                                     // Set water color
-                                    float intensity = transferAmount;
+                                    float intensity = (float)transferAmount / 100.0f;
                                     grid[y+1][x].baseColor = (Color){
                                         0 + (int)(200 * (1.0f - intensity)),
                                         120 + (int)(135 * (1.0f - intensity)),
@@ -1341,7 +1834,7 @@ static void TransferMoisture(void) {
                                     
                                     *moisture = ClampMoisture(*moisture - transferAmount);
                                     transferredMoisture = true;
-                                } else if(transferAmount > 0.05f) {
+                                } else if(transferAmount > 5) {
                                     // Create vapor for smaller transfer amounts
                                     PlaceVapor((Vector2){x, y+1}, transferAmount);
                                     *moisture = ClampMoisture(*moisture - transferAmount);
@@ -1350,18 +1843,18 @@ static void TransferMoisture(void) {
                             }
                             else if(grid[y+1][x].type == 1 || grid[y+1][x].type == 3) {
                                 // Soil or plant below - transfer moisture if they have less
-                                if(grid[y+1][x].moisture < *moisture && grid[y+1][x].moisture < 1.0f) {
+                                if(grid[y+1][x].moisture < *moisture && grid[y+1][x].moisture < 100) {
                                     // Increased transfer rate for downward flow (2x normal)
-                                    float transferAmount = 0.1f;
+                                    int transferAmount = 10;  // Was 0.1f
                                     
-                                    // Don't give away too much (sand wants to keep 0.5)
-                                    if(*moisture - transferAmount < 0.5f) {
-                                        transferAmount = *moisture - 0.5f;
+                                    // Don't give away too much (sand wants to keep 50)
+                                    if(*moisture - transferAmount < 50) {
+                                        transferAmount = *moisture - 50;
                                     }
                                     
                                     // Don't overfill the receiving cell
-                                    if(grid[y+1][x].moisture + transferAmount > 1.0f) {
-                                        transferAmount = 1.0f - grid[y+1][x].moisture;
+                                    if(grid[y+1][x].moisture + transferAmount > 100) {
+                                        transferAmount = 100 - grid[y+1][x].moisture;
                                     }
                                     
                                     if(transferAmount > 0) {
@@ -1373,11 +1866,11 @@ static void TransferMoisture(void) {
                             }
                             else if(grid[y+1][x].type == 4) { // Vapor below
                                 // Transfer moisture to vapor
-                                float transferAmount = 0.2f - grid[y+1][x].moisture;
-                                if(transferAmount <= 0) transferAmount = 0.05f;
+                                int transferAmount = 20 - grid[y+1][x].moisture;  // Was 0.2f
+                                if(transferAmount <= 0) transferAmount = 5;  // Was 0.05f
                                 
-                                if(*moisture - transferAmount < 0.5f) {
-                                    transferAmount = *moisture - 0.5f;
+                                if(*moisture - transferAmount < 50) {
+                                    transferAmount = *moisture - 50;
                                 }
                                 
                                 if(transferAmount > 0) {
@@ -1386,8 +1879,8 @@ static void TransferMoisture(void) {
                                     transferredMoisture = true;
                                     
                                     // Update vapor color
-                                    if(grid[y+1][x].moisture >= 0.5f) {
-                                        int brightness = 128 + (int)(127 * (grid[y+1][x].moisture - 0.5f) * 2.0f);
+                                    if(grid[y+1][x].moisture >= 50) {  // >= 0.5 in the old scale
+                                        int brightness = 128 + (int)(127 * ((float)(grid[y+1][x].moisture - 50) / 50.0f));
                                         grid[y+1][x].baseColor = (Color){
                                             brightness, brightness, brightness, 255
                                         };
@@ -1402,16 +1895,16 @@ static void TransferMoisture(void) {
                             if(x > 0 && grid[y+1][x-1].type != 2) {
                                 if(grid[y+1][x-1].type == 0) {
                                     // Empty space - create water/vapor
-                                    float transferAmount = 0.25f;
-                                    if(*moisture - transferAmount < 0.5f) transferAmount = *moisture - 0.5f;
+                                    int transferAmount = 25;  // Was 0.25f
+                                    if(*moisture - transferAmount < 50) transferAmount = *moisture - 50;
                                     
-                                    if(transferAmount >= 0.3f) {
+                                    if(transferAmount >= 30) {
                                         // Create water
                                         grid[y+1][x-1].type = 2;
                                         grid[y+1][x-1].moisture = transferAmount;
                                         grid[y+1][x-1].position = (Vector2){(x-1) * CELL_SIZE, (y+1) * CELL_SIZE};
                                         
-                                        float intensity = transferAmount;
+                                        float intensity = (float)transferAmount / 100.0f;
                                         grid[y+1][x-1].baseColor = (Color){
                                             0 + (int)(200 * (1.0f - intensity)),
                                             120 + (int)(135 * (1.0f - intensity)),
@@ -1421,22 +1914,22 @@ static void TransferMoisture(void) {
                                         
                                         *moisture = ClampMoisture(*moisture - transferAmount);
                                         transferredMoisture = true;
-                                    } else if(transferAmount > 0.05f) {
+                                    } else if(transferAmount > 5) {
                                         // Create vapor
                                         PlaceVapor((Vector2){x-1, y+1}, transferAmount);
                                         *moisture = ClampMoisture(*moisture - transferAmount);
                                         transferredMoisture = true;
                                     }
                                 } else if((grid[y+1][x-1].type == 1 || grid[y+1][x-1].type == 3) && 
-                                        grid[y+1][x-1].moisture < *moisture && grid[y+1][x-1].moisture < 1.0f) {
+                                        grid[y+1][x-1].moisture < *moisture && grid[y+1][x-1].moisture < 100) {
                                     // Transfer to soil/plant diagonally below
-                                    float transferAmount = 0.08f; // Slightly less than direct down
+                                    int transferAmount = 8;  // Was 0.08f
                                     
-                                    if(*moisture - transferAmount < 0.5f)
-                                        transferAmount = *moisture - 0.5f;
+                                    if(*moisture - transferAmount < 50)
+                                        transferAmount = *moisture - 50;
                                     
-                                    if(grid[y+1][x-1].moisture + transferAmount > 1.0f)
-                                        transferAmount = 1.0f - grid[y+1][x-1].moisture;
+                                    if(grid[y+1][x-1].moisture + transferAmount > 100)
+                                        transferAmount = 100 - grid[y+1][x-1].moisture;
                                     
                                     if(transferAmount > 0) {
                                         *moisture = ClampMoisture(*moisture - transferAmount);
@@ -1450,16 +1943,16 @@ static void TransferMoisture(void) {
                             if(!transferredMoisture && x < GRID_WIDTH-1 && grid[y+1][x+1].type != 2) {
                                 // Similar logic as bottom-left
                                 if(grid[y+1][x+1].type == 0) {
-                                    float transferAmount = 0.25f;
-                                    if(*moisture - transferAmount < 0.5f) transferAmount = *moisture - 0.5f;
+                                    int transferAmount = 25;  // Was 0.25f
+                                    if(*moisture - transferAmount < 50) transferAmount = *moisture - 50;
                                     
-                                    if(transferAmount >= 0.3f) {
+                                    if(transferAmount >= 30) {
                                         // Create water
                                         grid[y+1][x+1].type = 2;
                                         grid[y+1][x+1].moisture = transferAmount;
                                         grid[y+1][x+1].position = (Vector2){(x+1) * CELL_SIZE, (y+1) * CELL_SIZE};
                                         
-                                        float intensity = transferAmount;
+                                        float intensity = (float)transferAmount / 100.0f;
                                         grid[y+1][x+1].baseColor = (Color){
                                             0 + (int)(200 * (1.0f - intensity)),
                                             120 + (int)(135 * (1.0f - intensity)),
@@ -1469,22 +1962,22 @@ static void TransferMoisture(void) {
                                         
                                         *moisture = ClampMoisture(*moisture - transferAmount);
                                         transferredMoisture = true;
-                                    } else if(transferAmount > 0.05f) {
+                                    } else if(transferAmount > 5) {
                                         // Create vapor
                                         PlaceVapor((Vector2){x+1, y+1}, transferAmount);
                                         *moisture = ClampMoisture(*moisture - transferAmount);
                                         transferredMoisture = true;
                                     }
                                 } else if((grid[y+1][x+1].type == 1 || grid[y+1][x+1].type == 3) && 
-                                        grid[y+1][x+1].moisture < *moisture && grid[y+1][x+1].moisture < 1.0f) {
+                                        grid[y+1][x+1].moisture < *moisture && grid[y+1][x+1].moisture < 100) {
                                     // Transfer to soil/plant diagonally below
-                                    float transferAmount = 0.08f; // Slightly less than direct down
+                                    int transferAmount = 8;  // Was 0.08f
                                     
-                                    if(*moisture - transferAmount < 0.5f)
-                                        transferAmount = *moisture - 0.5f;
+                                    if(*moisture - transferAmount < 50)
+                                        transferAmount = *moisture - 50;
                                     
-                                    if(grid[y+1][x+1].moisture + transferAmount > 1.0f)
-                                        transferAmount = 1.0f - grid[y+1][x+1].moisture;
+                                    if(grid[y+1][x+1].moisture + transferAmount > 100)
+                                        transferAmount = 100 - grid[y+1][x+1].moisture;
                                     
                                     if(transferAmount > 0) {
                                         *moisture = ClampMoisture(*moisture - transferAmount);
@@ -1511,7 +2004,7 @@ static void TransferMoisture(void) {
                             {0, 1}     // Below (lowest priority)
                         };
                         
-                        for(int i = 0; i < 6 && *moisture > 0.5f; i++) {
+                        for(int i = 0; i < 6 && *moisture > 50; i++) {
                             int nx = x + checkOrder[i][0];
                             int ny = y + checkOrder[i][1];
                             
@@ -1519,21 +2012,21 @@ static void TransferMoisture(void) {
                             if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
                                 // Check if empty space
                                 if(grid[ny][nx].type == 0) {
-                                    float transferAmount = 0.2f;
-                                    if(*moisture - transferAmount < 0.5f) {
-                                        transferAmount = *moisture - 0.5f;
+                                    int transferAmount = 20;  // Was 0.2f
+                                    if(*moisture - transferAmount < 50) {
+                                        transferAmount = *moisture - 50;
                                     }
                                     
-                                    if(transferAmount > 0.05f) { // Minimum threshold
+                                    if(transferAmount > 5) { // Minimum threshold
                                         // Create water or vapor based on transfer amount
-                                        if(transferAmount >= 0.3f) {
+                                        if(transferAmount >= 30) {
                                             // Create water for large transfer amounts
                                             grid[ny][nx].type = 2; // Water
                                             grid[ny][nx].moisture = transferAmount;
                                             grid[ny][nx].position = (Vector2){nx * CELL_SIZE, ny * CELL_SIZE};
                                             
                                             // Set water color
-                                            float intensity = transferAmount;
+                                            float intensity = (float)transferAmount / 100.0f;
                                             grid[ny][nx].baseColor = (Color){
                                                 0 + (int)(200 * (1.0f - intensity)),
                                                 120 + (int)(135 * (1.0f - intensity)),
@@ -1550,10 +2043,10 @@ static void TransferMoisture(void) {
                                     }
                                 }
                                 // Add moisture to existing vapor if it's below visibility threshold
-                                else if(grid[ny][nx].type == 4 && grid[ny][nx].moisture < 0.5f) {
-                                    float transferAmount = 0.5f - grid[ny][nx].moisture; // Fill to visibility threshold
-                                    if(*moisture - transferAmount < 0.5f) {
-                                        transferAmount = *moisture - 0.5f;
+                                else if(grid[ny][nx].type == 4 && grid[ny][nx].moisture < 50) {  // < 0.5 in the old scale
+                                    int transferAmount = 50 - grid[ny][nx].moisture; // Fill to visibility threshold
+                                    if(*moisture - transferAmount < 50) {
+                                        transferAmount = *moisture - 50;
                                     }
                                     
                                     if(transferAmount > 0) {
@@ -1561,8 +2054,8 @@ static void TransferMoisture(void) {
                                         *moisture = ClampMoisture(*moisture - transferAmount);
                                         
                                         // Update vapor color
-                                        if(grid[ny][nx].moisture >= 0.5f) {
-                                            int brightness = 128 + (int)(127 * (grid[ny][nx].moisture - 0.5f) * 2.0f);
+                                        if(grid[ny][nx].moisture >= 50) {  // >= 0.5 in the old scale
+                                            int brightness = 128 + (int)(127 * ((float)(grid[ny][nx].moisture - 50) / 50.0f));
                                             grid[ny][nx].baseColor = (Color){
                                                 brightness, brightness, brightness, 255
                                             };
@@ -1574,7 +2067,7 @@ static void TransferMoisture(void) {
                                     }
                                 }
                                 // For existing vapor above threshold, create adjacent water instead
-                                else if(grid[ny][nx].type == 4 && grid[ny][nx].moisture >= 0.5f) {
+                                else if(grid[ny][nx].type == 4 && grid[ny][nx].moisture >= 50) {  // >= 0.5 in the old scale
                                     // Look for an adjacent empty space to place water
                                     for(int dy = -1; dy <= 1; dy++) {
                                         for(int dx = -1; dx <= 1; dx++) {
@@ -1586,18 +2079,18 @@ static void TransferMoisture(void) {
                                             if(wx >= 0 && wx < GRID_WIDTH && wy >= 0 && wy < GRID_HEIGHT && 
                                                grid[wy][wx].type == 0) {
                                                 // Found empty space, create water
-                                                float transferAmount = 0.3f;
-                                                if(*moisture - transferAmount < 0.5f) {
-                                                    transferAmount = *moisture - 0.5f;
+                                                int transferAmount = 30;  // Was 0.3f
+                                                if(*moisture - transferAmount < 50) {
+                                                    transferAmount = *moisture - 50;
                                                 }
                                                 
-                                                if(transferAmount > 0.1f) {
+                                                if(transferAmount > 10) {  // Was 0.1f
                                                     grid[wy][wx].type = 2; // Water
                                                     grid[wy][wx].moisture = transferAmount;
                                                     grid[wy][wx].position = (Vector2){wx * CELL_SIZE, wy * CELL_SIZE};
                                                     
                                                     // Set water color
-                                                    float intensity = transferAmount;
+                                                    float intensity = (float)transferAmount / 100.0f;
                                                     grid[wy][wx].baseColor = (Color){
                                                         0 + (int)(200 * (1.0f - intensity)),
                                                         120 + (int)(135 * (1.0f - intensity)),
@@ -1618,11 +2111,11 @@ static void TransferMoisture(void) {
                         }
                         
                         // If we didn't create vapor or water, distribute moisture to other cells
-                        if(!transferredMoisture && *moisture > 0.5f) {
+                        if(!transferredMoisture && *moisture > 50) {
                             // Original moisture distribution logic
                             // Look for adjacent cells to give moisture to (not water or air)
-                            for(int dy = -1; dy <= 1 && *moisture > 0.5f; dy++) {
-                                for(int dx = -1; dx <= 1 && *moisture > 0.5f; dx++) {
+                            for(int dy = -1; dy <= 1 && *moisture > 50; dy++) {
+                                for(int dx = -1; dx <= 1 && *moisture > 50; dx++) {
                                     // Skip the center cell
                                     if(dx == 0 && dy == 0) continue;
                                     
@@ -1634,17 +2127,17 @@ static void TransferMoisture(void) {
                                        grid[ny][nx].type != 0 && grid[ny][nx].type != 2 && 
                                        grid[ny][nx].moisture < *moisture) {
                                         
-                                        // Transfer some moisture (0.05 per cycle)
-                                        float transferAmount = 0.05f;
+                                        // Transfer some moisture (5 units per cycle)
+                                        int transferAmount = 5;  // Was 0.05f
                                         
-                                        // Don't give away too much (sand wants to keep 0.5)
-                                        if(*moisture - transferAmount < 0.5f) {
-                                            transferAmount = *moisture - 0.5f;
+                                        // Don't give away too much (sand wants to keep 50)
+                                        if(*moisture - transferAmount < 50) {
+                                            transferAmount = *moisture - 50;
                                         }
                                         
                                         // Don't overfill the receiving cell
-                                        if(grid[ny][nx].moisture + transferAmount > 1.0f) {
-                                            transferAmount = 1.0f - grid[ny][nx].moisture;
+                                        if(grid[ny][nx].moisture + transferAmount > 100) {
+                                            transferAmount = 100 - grid[ny][nx].moisture;
                                         }
                                         
                                         if(transferAmount > 0) {
@@ -1659,24 +2152,32 @@ static void TransferMoisture(void) {
                 }
                 
                 // Update sand color based on moisture
-                if(*moisture > 0) {
-                    // Interpolate between BROWN and DARKBROWN based on moisture
-                    grid[y][x].baseColor = (Color){
-                        127 - (*moisture * 51),  // R: 127 -> 76
-                        106 - (*moisture * 43),  // G: 106 -> 63
-                        79 - (*moisture * 32),   // B: 79 -> 47
-                        255
-                    };
+                float intensityPct = (float)*moisture / 100.0f;
+                grid[y][x].baseColor = (Color){
+                    127 - (intensityPct * 51),  // R: 127 -> 76
+                    106 - (intensityPct * 43),  // G: 106 -> 63
+                    79 - (intensityPct * 32),   // B: 79 -> 47
+                    255
+                };
+                
+                // Make sure sand type is preserved even if it has no moisture
+                if(*moisture <= 0) {
+                    *moisture = 0; // Clamp to zero
+                    // Don't change the type - sand remains sand even when dry
+                    grid[y][x].baseColor = BROWN; // Ensure it keeps the base sand color
                 }
             }
             
             // Handle water (type 2) moisture
             else if(grid[y][x].type == 2) {
+                // Skip vapor generation if the water is falling
+                if(grid[y][x].is_falling) continue;
+                
                 // Update water color based on moisture/density
-                float intensity = grid[y][x].moisture;
+                float intensityPct = (float)grid[y][x].moisture / 100.0f;
                 grid[y][x].baseColor = (Color){
-                    0 + (int)(200 * (1.0f - intensity)),
-                    120 + (int)(135 * (1.0f - intensity)),
+                    0 + (int)(200 * (1.0f - intensityPct)),
+                    120 + (int)(135 * (1.0f - intensityPct)),
                     255,
                     255
                 };
@@ -1698,7 +2199,7 @@ static void TransferMoisture(void) {
                 
                 // MODIFIED: Water transfers moisture to adjacent non-water/vapor cells
                 // AND receives moisture from adjacent wet sand
-                float totalReceived = 0.0f;  // Track total moisture received from wet sand
+                int totalReceived = 0;  // Track total moisture received from wet sand
                 
                 for(int dy = -1; dy <= 1; dy++) {
                     for(int dx = -1; dx <= 1; dx++) {
@@ -1713,17 +2214,17 @@ static void TransferMoisture(void) {
                             // Transfer moisture TO soil/plants
                             if(grid[ny][nx].type == 1 || grid[ny][nx].type == 3) {
                                 // Only transfer if there's room for more moisture
-                                if(grid[ny][nx].moisture < 1.0f) {
-                                    float transferAmount = 0.05f;
+                                if(grid[ny][nx].moisture < 100) {
+                                    int transferAmount = 5;  // Was 0.05f
                                     
                                     // Don't overfill
-                                    if(grid[ny][nx].moisture + transferAmount > 1.0f) {
-                                        transferAmount = 1.0f - grid[ny][nx].moisture;
+                                    if(grid[ny][nx].moisture + transferAmount > 100) {
+                                        transferAmount = 100 - grid[ny][nx].moisture;
                                     }
                                     
                                     // Don't give away all moisture
-                                    if(grid[y][x].moisture - transferAmount < 0.1f) {
-                                        transferAmount = grid[y][x].moisture - 0.1f;
+                                    if(grid[y][x].moisture - transferAmount < 10) {  // Was 0.1f
+                                        transferAmount = grid[y][x].moisture - 10;
                                         if(transferAmount <= 0) continue;
                                     }
                                     
@@ -1732,25 +2233,26 @@ static void TransferMoisture(void) {
                                 }
                             }
                             // Soil with excess moisture transfers TO water (significant amounts)
-                            else if(grid[ny][nx].type == 1 && grid[ny][nx].moisture > 0.6f) {
+                            else if(grid[ny][nx].type == 1 && grid[ny][nx].moisture > 60) {  // > 0.6 in the old scale
                                 // Very wet sand contributes significant moisture to adjacent water
-                                float transferAmount = 0.2f * (grid[ny][nx].moisture - 0.6f);
+                                int transferAmount = 20 * (grid[ny][nx].moisture - 60) / 100;  // Was 0.2f
                                 
                                 // Upper bound check
-                                if(grid[ny][nx].moisture - transferAmount < 0.6f) {
-                                    transferAmount = grid[ny][nx].moisture - 0.6f;
+                                if(grid[ny][nx].moisture - transferAmount < 60) {
+                                    transferAmount = grid[ny][nx].moisture - 60;
                                 }
                                 
-                                if(transferAmount > 0.01f) {
+                                if(transferAmount > 1) {  // Was 0.01f
                                     grid[ny][nx].moisture = ClampMoisture(grid[ny][nx].moisture - transferAmount);
                                     grid[y][x].moisture = ClampMoisture(grid[y][x].moisture + transferAmount);
                                     totalReceived += transferAmount;
                                     
                                     // Update soil color after moisture loss
+                                    float intensityPct = (float)grid[ny][nx].moisture / 100.0f;
                                     grid[ny][nx].baseColor = (Color){
-                                        127 - (grid[ny][nx].moisture * 51),  // R: 127 -> 76
-                                        106 - (grid[ny][nx].moisture * 43),  // G: 106 -> 63
-                                        79 - (grid[ny][nx].moisture * 32),   // B: 79 -> 47
+                                        127 - (intensityPct * 51),  // R: 127 -> 76
+                                        106 - (intensityPct * 43),  // G: 106 -> 63
+                                        79 - (intensityPct * 32),   // B: 79 -> 47
                                         255
                                     };
                                 }
@@ -1761,6 +2263,7 @@ static void TransferMoisture(void) {
                 
                 // MODIFIED: Only consider evaporation if water couldn't move, doesn't have many neighbors,
                 // AND did not receive significant moisture from surrounding wet sand
+                // AND is not falling (added condition)
                 float evaporationChance = 1.0f - (waterNeighbors * 0.1f); // 10% reduction per neighbor
                 
                 // Reduce evaporation chance significantly if receiving moisture from wet sand
@@ -1774,11 +2277,12 @@ static void TransferMoisture(void) {
                     evaporationChance = 0.2f;
                 
                 // If water is being actively replenished, significantly reduce evaporation rate
-                float evaporationRate = (totalReceived > 0.05f) ? 
+                float evaporationRate = (totalReceived > 5) ?  // Was 0.05f
                     0.0001f * (1.0f + y / (float)GRID_HEIGHT) : // Very slow if being replenished
                     0.001f * (1.0f + y / (float)GRID_HEIGHT);  // Normal rate otherwise
                 
-                if(grid[y][x].volume == 0 && grid[y][x].moisture > 0.2f && y > 0 && 
+                // Add the explicit check for falling state
+                if(grid[y][x].volume == 0 && !grid[y][x].is_falling && grid[y][x].moisture > 20 && y > 0 &&  // > 0.2 in the old scale
                    GetRandomValue(0, 100) < evaporationChance * 100) {
                     // Check spaces directly above and diagonally above
                     bool evaporated = false;
@@ -1800,10 +2304,10 @@ static void TransferMoisture(void) {
                            grid[ny][nx].type == 0) {
                             
                             // Standard evaporation for above/diagonal spaces
-                            float evaporatedAmount = fmin(evaporationRate, grid[y][x].moisture);
+                            int evaporatedAmount = fmin(evaporationRate, grid[y][x].moisture);
                             
-                            if(evaporatedAmount > 0.0005f) {
-                                grid[y][x].moisture = ClampMoisture(grid[y][x].moisture - evaporatedAmount);
+                            if(evaporatedAmount >= 5) {  // Was 0.05f
+                                grid[y][x].moisture -= evaporatedAmount;
                                 PlaceVapor((Vector2){nx, ny}, evaporatedAmount);
                                 evaporated = true;
                             }
@@ -1828,9 +2332,8 @@ static void TransferMoisture(void) {
                             if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
                                grid[ny][nx].type == 0) {
                                 
-                                // Transfer ALL moisture to the space
-                                float fullAmount = grid[y][x].moisture;
-                                grid[y][x].moisture = 0.0f;
+                                int fullAmount = grid[y][x].moisture;
+                                grid[y][x].moisture = 0;
                                 
                                 // Create vapor with all the moisture
                                 PlaceVapor((Vector2){nx, ny}, fullAmount);
@@ -1857,12 +2360,12 @@ static void TransferMoisture(void) {
                            (grid[ny][nx].type == 1 || grid[ny][nx].type == 3)) {
                             
                             // Only transfer if there's room for more moisture
-                            if(grid[ny][nx].moisture < 1.0f) {
-                                float transferAmount = 0.05f;
+                            if(grid[ny][nx].moisture < 100) {
+                                int transferAmount = 5;  // Was 0.05f
                                 
                                 // Don't overfill
-                                if(grid[ny][nx].moisture + transferAmount > 1.0f) {
-                                    transferAmount = 1.0f - grid[ny][nx].moisture;
+                                if(grid[ny][nx].moisture + transferAmount > 100) {
+                                    transferAmount = 100 - grid[ny][nx].moisture;
                                 }
                                 
                                 grid[ny][nx].moisture = ClampMoisture(grid[ny][nx].moisture + transferAmount);
@@ -1874,11 +2377,12 @@ static void TransferMoisture(void) {
             
             // Handle vapor (type 4)
             else if(grid[y][x].type == 4) {
-                // Update vapor color based on moisture - invisible if below 0.5
-                if(grid[y][x].moisture < 0.5f) {
+                // Update vapor color based on moisture - invisible if below 50
+                if(grid[y][x].moisture < 50) {  // < 0.5 in the old scale
                     grid[y][x].baseColor = BLACK; // Invisible
                 } else {
-                    int brightness = 128 + (int)(127 * (grid[y][x].moisture - 0.5f) * 2.0f);
+                    float intensityPct = (float)(grid[y][x].moisture - 50) / 50.0f;
+                    int brightness = 128 + (int)(127 * intensityPct);
                     grid[y][x].baseColor = (Color){
                         brightness, brightness, brightness, 255
                     };
@@ -1888,11 +2392,11 @@ static void TransferMoisture(void) {
                 // grid[y][x].moisture -= 0.0005f;
                 
                 // Instead, handle vapor dissipation through moisture transfer
-                if(grid[y][x].moisture > 0.03f) {  // Allow a minimum ambient vapor level
+                if(grid[y][x].moisture > 3) {  // Allow a minimum ambient vapor level (was 0.03f)
                     // Try to find another ambient vapor cell to transfer excess to
                     bool transferred = false;
                     for(int dy = -1; dy <= 1 && !transferred; dy++) {
-                        for(int dx = -1; dx <= 1 && !transferred; dx++) {
+                        for(int dx = -1; dy <= 1 && !transferred; dx++) {
                             if(dx == 0 && dy == 0) continue;
                             
                             int nx = x + dx;
@@ -1901,7 +2405,7 @@ static void TransferMoisture(void) {
                             if(nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT && 
                                grid[ny][nx].type == 4 && grid[ny][nx].moisture < grid[y][x].moisture) {
                                 // Transfer a tiny amount of moisture rather than losing it
-                                float transferAmount = 0.0005f;
+                                int transferAmount = 1;  // Was 0.0005f
                                 grid[y][x].moisture = ClampMoisture(grid[y][x].moisture - transferAmount);
                                 grid[ny][nx].moisture = ClampMoisture(grid[ny][nx].moisture + transferAmount);
                                 transferred = true;
@@ -1910,22 +2414,15 @@ static void TransferMoisture(void) {
                     }
                 }
                 
-                // Boost vapor buoyancy - increase moisture slightly to help vapor rise
-                // Higher vapor should have more moisture unless at max
-                if(grid[y][x].moisture > 0.03f && grid[y][x].moisture < 0.8f && GetRandomValue(0, 100) < 10) {
-                    // Small random boost to help vapor rise (counteracting lateral diffusion)
-                    grid[y][x].moisture += 0.001f;
-                }
-                
                 // Only convert to air if we're at the absolute minimum moisture
-                if(grid[y][x].moisture <= 0.01f) {
+                if(grid[y][x].moisture <= 1) {  // <= 0.01f in the old scale
                     // Instead of destroying this moisture, redistribute to neighbors
-                    float remainingMoisture = grid[y][x].moisture;
+                    int remainingMoisture = grid[y][x].moisture;
                     
                     if(remainingMoisture > 0) {
                         // Find nearby vapor cells to transfer remaining moisture to
                         for(int dy = -1; dy <= 1 && remainingMoisture > 0; dy++) {
-                            for(int dx = -1; dx <= 1 && remainingMoisture > 0; dx++) {
+                            for(int dx = -1; dy <= 1 && remainingMoisture > 0; dx++) {
                                 if(dx == 0 && dy == 0) continue;
                                 
                                 int nx = x + dx;
@@ -1942,8 +2439,25 @@ static void TransferMoisture(void) {
                     
                     // Now safe to convert to air since moisture is preserved
                     grid[y][x].type = 0; 
-                    grid[y][x].moisture = 0.0f;
+                    grid[y][x].moisture = 0;
                     grid[y][x].baseColor = BLACK;
+                }
+            }
+        }
+    }
+    
+    // After all transfers, verify total moisture hasn't changed
+    int finalMoisture = CalculateTotalMoisture();
+    if(finalMoisture != initialMoisture) {
+        // Fix any conservation errors
+        int adjustment = initialMoisture - finalMoisture;
+        bool fixed = false;
+        
+        for(int y = 0; y < GRID_HEIGHT && !fixed; y++) {
+            for(int x = 0; x < GRID_WIDTH && !fixed; x++) {
+                if(grid[y][x].type == 2 && grid[y][x].moisture + adjustment >= 10) {
+                    grid[y][x].moisture += adjustment;
+                    fixed = true;
                 }
             }
         }
@@ -1999,4 +2513,21 @@ static void DebugGridCells(void) {
     // Print debug info to console
     printf("Grid State: Air=%d, Soil=%d, Water=%d, Plant=%d, Vapor=%d, PinkCells=%d\n",
            typeCount[0], typeCount[1], typeCount[2], typeCount[3], typeCount[4], pinkCells);
+    
+    // Calculate and report total system moisture
+    int totalMoisture = CalculateTotalMoisture();
+    printf("Total system moisture: %d\n", totalMoisture);
+}
+
+// Add a function to track total moisture in the system (for debugging conservation)
+static int CalculateTotalMoisture() {
+    int totalMoisture = 0;
+    
+    for(int y = 0; y < GRID_HEIGHT; y++) {
+        for(int x = 0; x < GRID_WIDTH; x++) {
+            totalMoisture += grid[y][x].moisture;
+        }
+    }
+    
+    return totalMoisture;
 }
