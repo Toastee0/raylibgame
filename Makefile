@@ -205,9 +205,11 @@ endif
 #CFLAGS += -Wextra -Wmissing-prototypes -Wstrict-prototypes
 ifeq ($(PLATFORM),PLATFORM_DESKTOP)
     ifeq ($(PLATFORM_OS),WINDOWS)
-        # resource file contains windows executable icon and properties
+        # Move resource file to LDFLAGS instead of CFLAGS
+        RCFILE = $(RAYLIB_PATH)/src/raylib.rc.data
         # -Wl,--subsystem,windows hides the console window
-        CFLAGS += $(RAYLIB_PATH)/src/raylib.rc.data -Wl,--subsystem,windows
+        CFLAGS += -Wl,--subsystem,windows
+        LDFLAGS += $(RCFILE)
     endif
     ifeq ($(PLATFORM_OS),LINUX)
         ifeq ($(RAYLIB_LIBTYPE),STATIC)
@@ -347,14 +349,16 @@ endif
 # Define a recursive wildcard function
 rwildcard=$(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) $(filter $(subst *,%,$2),$d))
 
+# Define a recursive wildcard function that only searches in src directory
+rwildcard=$(foreach d,$(wildcard $(1)*),$(call rwildcard,$(d)/,$(2)) $(filter $(subst *,%,$2),$d))
+
 # Define all source files required
 SRC_DIR = src
 OBJ_DIR = obj
 
-# Define all object files from source files
-SRC = $(call rwildcard, ./, *.c, *.h)
-#OBJS = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-OBJS = $(patsubst %.c,%.o,$(filter %.c,$(SRC)))
+# Define all object files from source files - only search in src and current directory
+SRC_FILES = $(filter %.c,$(wildcard *.c) $(call rwildcard,$(SRC_DIR)/,*.c))
+OBJS = $(patsubst %.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 
 # For Android platform we call a custom Makefile.Android
 ifeq ($(PLATFORM),PLATFORM_ANDROID)
@@ -367,24 +371,36 @@ endif
 
 # Default target entry
 # NOTE: We call this Makefile target or Makefile.Android target
-all:
-	$(MAKE) $(MAKEFILE_PARAMS)
+all: $(PROJECT_NAME)
+
+# Make sure the obj directory exists
+$(OBJ_DIR):
+	@mkdir -p $(OBJ_DIR)
+	@mkdir -p $(OBJ_DIR)/src
 
 # Project target defined by PROJECT_NAME
-$(PROJECT_NAME): $(OBJS)
-	$(CC) -o $(PROJECT_NAME)$(EXT) $(OBJS) $(CFLAGS) $(INCLUDE_PATHS) $(LDFLAGS) $(LDLIBS) -D$(PLATFORM)
+$(PROJECT_NAME): $(OBJ_DIR) $(OBJS)
+	@echo Linking $(PROJECT_NAME)$(EXT)
+	@$(CC) -o $(PROJECT_NAME)$(EXT) $(OBJS) $(CFLAGS) $(INCLUDE_PATHS) $(LDFLAGS) $(LDLIBS) -D$(PLATFORM)
 
 # Compile source files
 # NOTE: This pattern will compile every module defined on $(OBJS)
-#%.o: %.c
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	$(CC) -c $< -o $@ $(CFLAGS) $(INCLUDE_PATHS) -D$(PLATFORM)
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	@echo Compiling $<
+	@$(CC) -c $< -o $@ $(CFLAGS) $(INCLUDE_PATHS) -D$(PLATFORM)
+
+# Define an explicit main target for VSCode
+main: $(PROJECT_NAME)
 
 # Clean everything
 clean:
+	@echo Cleaning...
+	@rm -rf $(OBJ_DIR)
+	@rm -f $(PROJECT_NAME)$(EXT)
 ifeq ($(PLATFORM),PLATFORM_DESKTOP)
     ifeq ($(PLATFORM_OS),WINDOWS)
-		del *.o *.exe /s
+		@del *.o *.exe /s 2>nul || echo "No files to clean"
     endif
     ifeq ($(PLATFORM_OS),LINUX)
 	find -type f -executable | xargs file -i | grep -E 'x-object|x-archive|x-sharedlib|x-executable' | rev | cut -d ':' -f 2- | rev | xargs rm -fv

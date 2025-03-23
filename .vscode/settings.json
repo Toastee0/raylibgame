@@ -7,5 +7,12 @@
 		"**/.DS_Store": true,
 		"**/*.o": true,
 		"**/*.exe": true,
+	},
+	"files.associations": {
+		"cell_actions.h": "c",
+		"simulation.h": "c",
+		"input.h": "c",
+		"rendering.h": "c",
+		"grid.h": "c"
 	}
 }
