@@ -90,7 +90,6 @@ static void TransferMoisture(void);
 static void UpdateVapor(void);
 static void PlaceVapor(Vector2 position, int moisture);
 static void FloodFillCeilingCluster(int x, int y, int clusterID, int** clusterIDs);
-static void DebugGridCells(void); // Add debug function
 static int CalculateTotalMoisture(); // Add function to calculate total moisture
 static int ClampMoisture(int value); // Add ClampMoisture declaration
 
@@ -1575,9 +1574,7 @@ static void HandleInput(void) {
     }
     
     // Add debug key - press D to check for bad cells
-    if(IsKeyPressed(KEY_D)) {
-        DebugGridCells();
-    }
+  
 }
 
 static void DrawGameGrid(void) {
@@ -2486,38 +2483,6 @@ static void FloodFillCeilingCluster(int x, int y, int clusterID, int** clusterID
     FloodFillCeilingCluster(x+1, y+1, clusterID, clusterIDs); // Diag below right
 }
 
-// Add a debug function to check cell state (can be triggered with a key press)
-static void DebugGridCells(void) {
-    // Count cells by type and color
-    int typeCount[5] = {0}; // Air, Soil, Water, Plant, Vapor
-    int pinkCells = 0;
-    
-    for(int y = 0; y < GRID_HEIGHT; y++) {
-        for(int x = 0; x < GRID_WIDTH; x++) {
-            int type = grid[y][x].type;
-            if(type >= 0 && type <= 4) {
-                typeCount[type]++;
-            }
-            
-            // Check for pink-ish colors
-            Color c = grid[y][x].baseColor;
-            if(c.r > 200 && c.g < 100 && c.b > 200) {
-                pinkCells++;
-                // Reset to the correct color
-                grid[y][x].baseColor = BLACK;
-                grid[y][x].type = 0; // Reset to air as a safety measure
-            }
-        }
-    }
-    
-    // Print debug info to console
-    printf("Grid State: Air=%d, Soil=%d, Water=%d, Plant=%d, Vapor=%d, PinkCells=%d\n",
-           typeCount[0], typeCount[1], typeCount[2], typeCount[3], typeCount[4], pinkCells);
-    
-    // Calculate and report total system moisture
-    int totalMoisture = CalculateTotalMoisture();
-    printf("Total system moisture: %d\n", totalMoisture);
-}
 
 // Add a function to track total moisture in the system (for debugging conservation)
 static int CalculateTotalMoisture() {
