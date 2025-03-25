@@ -7,12 +7,22 @@
 #include <math.h>
 
 
-//AbsorbMoisture helper function
-void AbsorbMoisture(int* source, int* target) {
-    int canabsorb = *source - (100 - *target);
-    int leftover = *source - canabsorb;
-    *target += canabsorb;
-    *source = leftover;
+
+
+void AbsorbMoisture(int* sourceMoisture, int* targetMoisture) {
+    int transferAmount = (*sourceMoisture) / 4;  // Transfer 25% of moisture
+    
+    // Ensure we don't exceed 100 in the target
+    int maxTransfer = 100 - (*targetMoisture);
+    if (transferAmount > maxTransfer) transferAmount = maxTransfer;
+    
+    // Update both cells with the transfer amount
+    *sourceMoisture -= transferAmount;
+    *targetMoisture += transferAmount;
+    
+    // Validate bounds to ensure we didn't lose moisture
+    if (*sourceMoisture < 0) *sourceMoisture = 0;
+    if (*targetMoisture > 100) *targetMoisture = 100;
 }
 
 
@@ -34,6 +44,8 @@ int CountWaterNeighbors(int x, int y) {
     return count;
 }
 
+
+
 // Main simulation update function
 void UpdateGrid(void) {
     // Reset all falling states before processing movement
@@ -46,9 +58,13 @@ void UpdateGrid(void) {
     static int updateCount = 0;
     updateCount++;
     
-   
-        UpdateWater();
-        UpdateSoil();
+    // Update all cell types in the right order
+    UpdateSoil();         // Soil falls
+    UpdateWater();        // Water flows
+    UpdateEvaporation();  // Water evaporates based on temperature
+    UpdateAir();          // Moist air rises, and clouds form in cool regions
+    
+    // Other update functions...
 }
 
 // Update soil physics
@@ -288,6 +304,166 @@ void UpdateWater(void) {
                 // Update falling state based on movement
                 grid[y][x].is_falling = hasMoved && canFallAnyDirection;
             }
+        }
+    }
+}
+
+// Update air physics - makes moist air rise
+void UpdateAir(void) {
+    // First pass: move moist air upward
+    for(int y = 1; y < GRID_HEIGHT - 1; y++) {
+        for(int x = 1; x < GRID_WIDTH - 1; x++) {
+            if(grid[y][x].type == CELL_TYPE_AIR) {
+                // Higher moisture content makes air rise
+                if(grid[y][x].moisture > 30) {
+                    if(y > 0 && grid[y-1][x].type == CELL_TYPE_AIR) {
+                        if(grid[y-1][x].moisture < grid[y][x].moisture - 10) {
+                            MoveCell(x, y, x, y-1);
+                        }
+                    }
+                }
+                
+                // Update air color based on moisture
+                UpdateAirColor(x, y);
+            }
+        }
+    }
+    
+    // Second pass: cloud formation in top region
+    for(int y = 0; y < 10; y++) {  // Top 10 rows for cloud formation
+        for(int x = 1; x < GRID_WIDTH - 1; x++) {
+            if(grid[y][x].type == CELL_TYPE_AIR) {
+                // Calculate air saturation based on temperature
+                // Cooler air holds less moisture
+                float saturationLimit = 60.0f + (grid[y][x].temperature * 2.0f);
+                
+                // Try to merge moisture with neighboring air cells
+                MergeAirMoisture(x, y);
+                
+                // Check if air is supersaturated - convert to water droplet
+                if(grid[y][x].moisture > saturationLimit) {
+                    // Convert to water with some of the moisture
+                    int precipitationAmount = grid[y][x].moisture - saturationLimit + GetRandomValue(5, 15);
+                    
+                    // Ensure we're not taking too much
+                    if(precipitationAmount > grid[y][x].moisture - 10)
+                        precipitationAmount = grid[y][x].moisture - 10;
+                    
+                    // Only precipitate if significant moisture available
+                    if(precipitationAmount > 20 && GetRandomValue(0, 100) < 5) {  // 5% chance per update
+                        grid[y][x].type = CELL_TYPE_WATER;
+                        grid[y][x].moisture = precipitationAmount;
+                        grid[y][x].is_falling = true;
+                        
+                        // Adjust color for new water droplet
+                        float intensityPct = (float)grid[y][x].moisture / 100.0f;
+                        grid[y][x].baseColor = (Color){
+                            0 + (int)(200 * (1.0f - intensityPct)),
+                            120 + (int)(135 * (1.0f - intensityPct)),
+                            255,
+                            255
+                        };
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Helper function to update air cell color based on moisture
+void UpdateAirColor(int x, int y) {
+    if(grid[y][x].type == CELL_TYPE_AIR) {
+        if(grid[y][x].moisture > 75) {
+            int brightness = (grid[y][x].moisture - 75) * (255 / 25);
+            grid[y][x].baseColor = (Color){brightness, brightness, brightness, 255};
+        } else {
+            grid[y][x].baseColor = BLACK;  // Invisible air
+        }
+    }
+}
+
+// Helper function to merge moisture between air cells
+void MergeAirMoisture(int x, int y) {
+    if(grid[y][x].type != CELL_TYPE_AIR)
+        return;
+        
+    // Look at neighboring air cells
+    for(int dy = -1; dy <= 1; dy++) {
+        for(int dx = -1; dx <= 1; dx++) {
+            // Skip center and out of bounds
+            if((dx == 0 && dy == 0) || 
+               y+dy < 0 || y+dy >= GRID_HEIGHT || 
+               x+dx < 0 || x+dx >= GRID_WIDTH)
+                continue;
+                
+            // If neighbor is air with more moisture, equalize
+            if(grid[y+dy][x+dx].type == CELL_TYPE_AIR) {
+                if(grid[y+dy][x+dx].moisture > grid[y][x].moisture + 5) {
+                    int transferAmount = (grid[y+dy][x+dx].moisture - grid[y][x].moisture) / 4;
+                    grid[y+dy][x+dx].moisture -= transferAmount;
+                    grid[y][x].moisture += transferAmount;
+                }
+            }
+        }
+    }
+}
+
+// Update evaporation considering temperature
+void UpdateEvaporation(void) {
+    for(int y = 0; y < GRID_HEIGHT; y++) {
+        for(int x = 0; x < GRID_WIDTH; x++) {
+            if(grid[y][x].type == CELL_TYPE_WATER && grid[y][x].moisture > 30) {
+                // Evaporation rate increases with temperature
+                float evapRate = 0.5f + (grid[y][x].temperature - 10.0f) * 0.05f;
+                if(evapRate < 0.1f) evapRate = 0.1f;
+                
+                // Basic chance for evaporation
+                if(GetRandomValue(0, 100) < evapRate * 100) {
+                    // Look for air cells to transfer moisture to
+                    for(int dy = -1; dy <= 1; dy++) {
+                        for(int dx = -1; dx <= 1; dx++) {
+                            if((dx == 0 && dy == 0) || 
+                               y+dy < 0 || y+dy >= GRID_HEIGHT ||
+                               x+dx < 0 || x+dx >= GRID_WIDTH)
+                                continue;
+                                
+                            if(grid[y+dy][x+dx].type == CELL_TYPE_AIR && grid[y+dy][x+dx].moisture < 95) {
+                                int evapAmount = 1 + GetRandomValue(0, 2);
+                                
+                                // Adjust based on temperature difference
+                                float tempDiff = grid[y+dy][x+dx].temperature - grid[y][x].temperature;
+                                if(tempDiff < 0) evapAmount = (int)(evapAmount * (1.0f + tempDiff * 0.1f));
+                                
+                                if(evapAmount < 1) evapAmount = 1;
+                                
+                                if(grid[y][x].moisture - evapAmount >= 20) {
+                                    grid[y][x].moisture -= evapAmount;
+                                    grid[y+dy][x+dx].moisture += evapAmount;
+                                    UpdateAirColor(x+dx, y+dy);
+                                }
+                                
+                                break;  // Only evaporate to one cell per update
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Initialize temperature gradient across the grid
+void InitializeTemperature(void) {
+    const float baseTemp = 18.0f;     // Bottom temperature in Celsius
+    const float topTemp = 5.0f;       // Top temperature in Celsius
+    const float tempRange = baseTemp - topTemp;
+    
+    for(int y = 0; y < GRID_HEIGHT; y++) {
+        // Calculate temperature based on y position (cooler at top)
+        float tempAtHeight = baseTemp - (tempRange * (float)y / GRID_HEIGHT);
+        
+        for(int x = 0; x < GRID_WIDTH; x++) {
+            grid[y][x].temperature = tempAtHeight;
         }
     }
 }

@@ -19,4 +19,7 @@ int ClampMoisture(int value);
 bool IsBorderTile(int x, int y);
 bool CanMoveTo(int x, int y);
 
+// Initialize temperature gradient for all cells
+void InitializeTemperatureGradient(void);
+
 #endif // GRID_H

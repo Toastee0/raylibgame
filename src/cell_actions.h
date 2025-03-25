@@ -27,7 +27,5 @@ void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius);
 // Function to move a cell from one position to another
 void MoveCell(int x1, int y1, int x2, int y2);
 
-// Function to absorb moisture from one cell to another
-void AbsorbMoisture(int* sourceMoisture, int* targetMoisture);
 
 #endif // CELL_ACTIONS_H

@@ -85,6 +85,7 @@ static void UpdateDrawFrame(void) {
     
     // Only update the grid if simulation is running and not paused
     if (simulationRunning && !simulationPaused) {
+        // Update simulation
         UpdateGrid();
     }
     
@@ -93,7 +94,7 @@ static void UpdateDrawFrame(void) {
         DrawGameGrid();
         DrawUI();
         
-        // Draw initialization message if not started
+        // Draw other UI elements
         if (!simulationRunning) {
             DrawRectangle(0, screenHeight/2 - 50, screenWidth, 100, Fade(BLACK, 0.7f));
             DrawText("SET UP INITIAL STATE THEN PRESS SPACE TO START SIMULATION", 

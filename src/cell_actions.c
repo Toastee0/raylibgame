@@ -208,3 +208,6 @@ void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
     }
 }
 
+// Function to absorb moisture from one cell to another
+// sourceMoisture is the source cell's moisture level
+// targetMoisture is the cell absorbing the moisture

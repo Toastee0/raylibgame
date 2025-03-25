@@ -46,7 +46,28 @@ void InitGrid(void) {
         }
     }
     
-    printf("Grid initialized: %d x %d cells\n", GRID_WIDTH, GRID_HEIGHT);
+    // After all cells are initialized, set up the temperature gradient
+    InitializeTemperatureGradient();
+    
+    printf("Grid initialized with temperature gradient\n");
+}
+
+// Add the function definition after InitGrid
+void InitializeTemperatureGradient(void) {
+    const float baseTemp = 18.0f;     // Bottom temperature in Celsius
+    const float topTemp = 5.0f;       // Top temperature in Celsius
+    const float tempRange = baseTemp - topTemp;
+    
+    for(int y = 0; y < GRID_HEIGHT; y++) {
+        // Calculate temperature based on y position (cooler at top)
+        float tempAtHeight = baseTemp - (tempRange * (float)y / GRID_HEIGHT);
+        
+        for(int x = 0; x < GRID_WIDTH; x++) {
+            grid[y][x].temperature = tempAtHeight;
+        }
+    }
+    
+    printf("Temperature gradient initialized (%.1f°C to %.1f°C)\n", baseTemp, topTemp);
 }
 
 // Clean up the grid when program ends
