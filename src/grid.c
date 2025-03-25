@@ -1,6 +1,7 @@
 #include "grid.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include "src/cell_defaults.h"
 
 // Grid constants
 const int CELL_SIZE = 8;
@@ -13,28 +14,39 @@ GridCell** grid = NULL;
 // Initialize the grid
 void InitGrid(void) {
     grid = (GridCell**)malloc(GRID_HEIGHT * sizeof(GridCell*));
+    if (!grid) {
+        printf("ERROR: Failed to allocate memory for grid rows\n");
+        return;
+    }
+    
     for(int i = 0; i < GRID_HEIGHT; i++) {
         grid[i] = (GridCell*)malloc(GRID_WIDTH * sizeof(GridCell));
+        if (!grid[i]) {
+            printf("ERROR: Failed to allocate memory for grid row %d\n", i);
+            // Clean up already allocated rows
+            for (int j = 0; j < i; j++) {
+                free(grid[j]);
+            }
+            free(grid);
+            grid = NULL;
+            return;
+        }
+        
         for(int j = 0; j < GRID_WIDTH; j++) {
-            grid[i][j].position = (Vector2){j * CELL_SIZE, i * CELL_SIZE};
-            grid[i][j].baseColor = BLACK;
-            grid[i][j].type = CELL_TYPE_AIR;
-            grid[i][j].moisture = 20;
-            grid[i][j].permeable = 1;
-            grid[i][j].is_falling = false;
-            grid[i][j].volume = 0;
+            // Use the default initializer for consistent cell setup
+            InitializeCellDefaults(&grid[i][j], CELL_TYPE_AIR);
             
-            // Initialize other fields to safe defaults
-            grid[i][j].objectID = 0;
-            grid[i][j].colorhigh = 0;
-            grid[i][j].colorlow = 0;
-            grid[i][j].Energy = 0;
-            grid[i][j].height = 0;
-            grid[i][j].age = 0;
-            grid[i][j].maxage = 0;
-            grid[i][j].temperature = 20; // Room temperature
+            // Update position based on grid coordinates
+            grid[i][j].position = (Vector2){j * CELL_SIZE, i * CELL_SIZE};
+            
+            // Make border cells immutable
+            if (i == 0 || i == GRID_HEIGHT-1 || j == 0 || j == GRID_WIDTH-1) {
+                grid[i][j].type = CELL_TYPE_BORDER;
+            }
         }
     }
+    
+    printf("Grid initialized: %d x %d cells\n", GRID_WIDTH, GRID_HEIGHT);
 }
 
 // Clean up the grid when program ends

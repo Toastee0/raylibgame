@@ -6,6 +6,7 @@
 
 // External variables needed for UI rendering
 extern int brushRadius;
+extern int currentSelectedType;
 
 // Draw the game grid
 void DrawGameGrid(void) {
@@ -14,15 +15,26 @@ void DrawGameGrid(void) {
             // Add safety check to prevent undefined colors
             Color cellColor = grid[i][j].baseColor;
             
-                     
-            // Fix for pink, purple or undefined colors
-            if((cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 200) || 
-               (cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 100)) {
+            // Special case for air - only visible at high moisture levels
+            if(grid[i][j].type == CELL_TYPE_AIR) {
+                // Air with less than 75% moisture is invisible (black)
+                if(grid[i][j].moisture < 75) {
+                    cellColor = BLACK;
+                } else {
+                    // Above 75% moisture, air becomes increasingly visible/white
+                    // Calculate a brightness based on moisture (75-100 mapped to 0-255)
+                    int brightness = (grid[i][j].moisture - 75) * (255 / 25);
+                    cellColor = (Color){brightness, brightness, brightness, 255};
+                }
+                
+                // Update the stored color
+                grid[i][j].baseColor = cellColor;
+            }
+            // Fix for pink, purple or undefined colors for other cell types
+            else if((cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 200) || 
+                    (cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 100)) {
                 // This is detecting pink/purple-ish colors
                 switch(grid[i][j].type) {
-                    case CELL_TYPE_AIR: // Air
-                        cellColor = BLACK;
-                        break;
                     case CELL_TYPE_SOIL: // Soil
                         {
                             // Re-calculate soil color based on proper moisture range
@@ -72,6 +84,47 @@ void DrawGameGrid(void) {
 
 // Draw UI elements
 void DrawUI(void) {
+    // Draw cell type selection UI
+    const int buttonSize = 64;
+    const int padding = 10;
+    const int startX = 10;
+    const int startY = 10;
+    
+    // Cell type labels for UI
+    const char* typeLabels[] = {
+        "Air", "Soil", "Water", "Plant", "Rock", "Moss"
+    };
+    
+    // Cell type colors for UI
+    Color typeColors[] = {
+        WHITE,                          // Air
+        (Color){127, 106, 79, 255},     // Soil
+        BLUE,                           // Water
+        GREEN,                          // Plant 
+        DARKGRAY,                       // Rock
+        DARKGREEN                       // Moss
+    };
+    
+    // Draw cell type buttons
+    for (int i = 0; i <= CELL_TYPE_MOSS; i++) {
+        int posX = startX + (buttonSize + padding) * i;
+        
+        // Draw button background (highlight if selected)
+        DrawRectangle(posX, startY, buttonSize, buttonSize, 
+                     (i == currentSelectedType) ? LIGHTGRAY : DARKGRAY);
+        
+        // Draw cell type color preview
+        DrawRectangle(posX + 5, startY + 5, buttonSize - 10, buttonSize - 25, typeColors[i]);
+        
+        // Draw type name
+        DrawText(typeLabels[i], posX + 5, startY + buttonSize - 18, 16, WHITE);
+    }
+    
+    // Draw brush size indicator
+    char brushText[32];
+    sprintf(brushText, "Brush: %d", brushRadius);
+    DrawText(brushText, startX, startY + buttonSize + 10, 20, WHITE);
+    
     // Draw the brush size indicator in top-right corner
     int margin = 20;
     int indicatorRadius = brushRadius * 4; // Scale up for better visibility

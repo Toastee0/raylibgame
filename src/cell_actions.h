@@ -3,13 +3,31 @@
 
 #include "raylib.h"
 
-// Cell creation
+// Function to place soil
 void PlaceSoil(Vector2 position);
+
+// Function to place water
 void PlaceWater(Vector2 position);
 
+// Function to place plant
+void PlacePlant(Vector2 position);
+
+// Function to place rock
+void PlaceRock(Vector2 position);
+
+// Function to place moss
+void PlaceMoss(Vector2 position);
+
+// Function to place air
+void PlaceAir(Vector2 position);
+
+// Function to place cells in a circular pattern
 void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius);
 
-// Cell movement
-void MoveCell(int x, int y, int x2, int y2);
+// Function to move a cell from one position to another
+void MoveCell(int x1, int y1, int x2, int y2);
+
+// Function to absorb moisture from one cell to another
+void AbsorbMoisture(int* sourceMoisture, int* targetMoisture);
 
 #endif // CELL_ACTIONS_H

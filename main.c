@@ -29,6 +29,7 @@
 // Include our custom headers
 #include "src/cell_types.h"
 #include "src/grid.h"
+
 #include "src/cell_actions.h"
 #include "src/simulation.h"
 #include "src/input.h"
@@ -42,32 +43,27 @@
 // Local Variables Definition (local to this module)
 //----------------------------------------------------------------------------------
 Camera camera = { 0 };
-int brushRadius = 1;  // Default brush radius (in grid cells)
+int brushRadius = 8;  // Default brush radius (in grid cells)
 float lastSeedTime = 0;
 const float SEED_DELAY = 0.5f;  // Half second delay between seeds
+int currentSelectedType = CELL_TYPE_SOIL;  // Default to soil
+bool simulationRunning = false;  // Flag to control simulation state
+bool simulationPaused = true;    // Start with simulation paused
+
+// Global screen dimensions
+const int screenWidth = 1920;
+const int screenHeight = 1080;
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
 //----------------------------------------------------------------------------------
 static void UpdateDrawFrame(void);
 
-//----------------------------------------------------------------------------------
-// Main function
-//----------------------------------------------------------------------------------
-int main() {
-    const int screenWidth = 1920;
-    const int screenHeight = 1080;
-
+int main(void) {
     InitWindow(screenWidth, screenHeight, "Sandbox");
 
     // Initialize grid
     InitGrid();
-
-    camera.position = (Vector3){ 10.0f, 10.0f, 8.0f };
-    camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
-    camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
-    camera.fovy = 60.0f;
-    camera.projection = CAMERA_PERSPECTIVE;
 
     SetTargetFPS(60);
 
@@ -84,12 +80,30 @@ int main() {
 
 // Update and draw frame function
 static void UpdateDrawFrame(void) {
+    // Always handle input
     HandleInput();
-    UpdateGrid();
+    
+    // Only update the grid if simulation is running and not paused
+    if (simulationRunning && !simulationPaused) {
+        UpdateGrid();
+    }
     
     BeginDrawing();
         ClearBackground(BLACK);
         DrawGameGrid();
         DrawUI();
+        
+        // Draw initialization message if not started
+        if (!simulationRunning) {
+            DrawRectangle(0, screenHeight/2 - 50, screenWidth, 100, Fade(BLACK, 0.7f));
+            DrawText("SET UP INITIAL STATE THEN PRESS SPACE TO START SIMULATION", 
+                    screenWidth/2 - MeasureText("SET UP INITIAL STATE THEN PRESS SPACE TO START SIMULATION", 30)/2,
+                    screenHeight/2 - 15, 30, WHITE);
+        } else if (simulationPaused) {
+            DrawRectangle(0, screenHeight/2 - 50, screenWidth, 100, Fade(BLACK, 0.7f));
+            DrawText("SIMULATION PAUSED - PRESS SPACE TO RESUME", 
+                    screenWidth/2 - MeasureText("SIMULATION PAUSED - PRESS SPACE TO RESUME", 30)/2,
+                    screenHeight/2 - 15, 30, WHITE);
+        }
     EndDrawing();
 }
