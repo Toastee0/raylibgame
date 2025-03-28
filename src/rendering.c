@@ -50,7 +50,7 @@ void DrawGameGrid(void) {
                     case CELL_TYPE_WATER: // Water
                         {
                             // Re-calculate water color based on proper moisture range
-                            float intensityPct = (float)grid[i][j].moisture / 100.0f;
+                            float intensityPct = (float)grid[i][j].moisture / 1000.0f;
                             cellColor = (Color){
                                 0 + (int)(200 * (1.0f - intensityPct)),
                                 120 + (int)(135 * (1.0f - intensityPct)),
@@ -160,8 +160,7 @@ void DrawUI(void) {
     sprintf(moistureText, "Total Moisture: %d", CalculateTotalMoisture());
     DrawText(moistureText, 10, 110, 20, WHITE);
     
-    // Add text at bottom of screen
-    DrawText("Tree Growth Simulation", 10, GetScreenHeight() - 30, 20, WHITE);
+   
 }
 
 // Draw UI panel on the right side of the game area

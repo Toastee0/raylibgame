@@ -27,12 +27,12 @@ void PlaceWater(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_WATER);
-    // Give newly placed water a random moisture level between 70 and 100
-    grid[y][x].moisture = 70 + GetRandomValue(0, 30);
+    // Give newly placed water a random moisture level between 700 and 1000
+    grid[y][x].moisture = 700 + GetRandomValue(0, 300);
     grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
     
     // Update color based on moisture
-    float intensityPct = (float)grid[y][x].moisture / 100.0f;
+    float intensityPct = (float)grid[y][x].moisture / 1000.0f;
     grid[y][x].baseColor = (Color){
         0 + (int)(200 * (1.0f - intensityPct)),
         120 + (int)(135 * (1.0f - intensityPct)),
@@ -158,7 +158,7 @@ void PlaceAir(Vector2 position) {
     }
 }
 
-// Move cell function - swaps position of two cells
+// Move cell function - swaps properties but not position of two cells
 void MoveCell(int x1, int y1, int x2, int y2) {
     // Bounds checking to prevent memory corruption
     if (x1 < 0 || x1 >= GRID_WIDTH || y1 < 0 || y1 >= GRID_HEIGHT ||
@@ -172,8 +172,8 @@ void MoveCell(int x1, int y1, int x2, int y2) {
     grid[y2][x2] = temp;
     
     // Update position properties to match new grid locations
-    grid[y1][x1].position = (Vector2){x1 * CELL_SIZE, y1 * CELL_SIZE};
-    grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
+  //  grid[y1][x1].position = (Vector2){x1 * CELL_SIZE, y1 * CELL_SIZE};
+  //  grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
 }
 
 // Place cells in a circular pattern
