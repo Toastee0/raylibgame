@@ -163,3 +163,88 @@ void DrawUI(void) {
     // Add text at bottom of screen
     DrawText("Tree Growth Simulation", 10, GetScreenHeight() - 30, 20, WHITE);
 }
+
+// Draw UI panel on the right side of the game area
+void DrawUIOnRight(int height, int width) {
+    // Get the starting X position for the UI panel (right after the game area)
+    extern int gameWidth;
+    int uiStartX = gameWidth;
+    
+    // Draw background for UI panel
+    DrawRectangle(uiStartX, 0, width, height, Fade(DARKGRAY, 0.8f));
+    
+    // Draw title
+    DrawText("Sandbox Controls", uiStartX + 20, 20, 24, WHITE);
+    
+    // Cell type selection UI
+    DrawText("Materials:", uiStartX + 20, 60, 20, WHITE);
+    
+    const int buttonSize = 64;
+    const int padding = 10;
+    const int startX = uiStartX + 20;
+    const int startY = 90;
+    
+    // Cell type labels for UI
+    const char* typeLabels[] = {
+        "Air", "Soil", "Water", "Plant", "Rock", "Moss"
+    };
+    
+    // Cell type colors for UI
+    Color typeColors[] = {
+        WHITE,                          // Air
+        (Color){127, 106, 79, 255},     // Soil
+        BLUE,                           // Water
+        GREEN,                          // Plant 
+        DARKGRAY,                       // Rock
+        DARKGREEN                       // Moss
+    };
+    
+    // Calculate buttons per row based on UI panel width
+    int buttonsPerRow = (width - 40) / (buttonSize + padding);
+    if (buttonsPerRow < 1) buttonsPerRow = 1;
+    
+    // Draw cell type buttons
+    for (int i = 0; i <= CELL_TYPE_MOSS; i++) {
+        int row = i / buttonsPerRow;
+        int col = i % buttonsPerRow;
+        int posX = startX + col * (buttonSize + padding);
+        int posY = startY + row * (buttonSize + padding + 20);
+        
+        // Draw button background (highlight if selected)
+        DrawRectangle(posX, posY, buttonSize, buttonSize, 
+                     (i == currentSelectedType) ? LIGHTGRAY : DARKGRAY);
+        
+        // Draw cell type color preview
+        DrawRectangle(posX + 5, posY + 5, buttonSize - 10, buttonSize - 25, typeColors[i]);
+        
+        // Draw type name
+        DrawText(typeLabels[i], posX + 5, posY + buttonSize - 18, 16, WHITE);
+    }
+    
+    // Draw brush size controls
+    int controlsY = startY + ((CELL_TYPE_MOSS+1) / buttonsPerRow + 1) * (buttonSize + padding + 20);
+    
+    // Draw brush size text
+    char brushText[32];
+    sprintf(brushText, "Brush Size: %d", brushRadius);
+    DrawText(brushText, startX, controlsY, 20, WHITE);
+    
+    // Draw brush preview
+    DrawCircleLines(startX + width/2, controlsY + 50, brushRadius * 3, WHITE);
+    
+    // Draw simulation controls
+    int simControlsY = controlsY + 100;
+    DrawText("Simulation Controls:", startX, simControlsY, 20, WHITE);
+    
+    DrawText("Space: Start/Pause", startX, simControlsY + 30, 18, WHITE);
+    DrawText("Mouse Wheel: Adjust brush", startX, simControlsY + 55, 18, WHITE);
+    
+    // Draw moisture info
+    int moistureY = simControlsY + 90;
+    char moistureText[50];
+    sprintf(moistureText, "Total Moisture: %d", CalculateTotalMoisture());
+    DrawText(moistureText, startX, moistureY, 18, WHITE);
+    
+    // Draw performance meter
+    DrawFPS(startX, height - 30);
+}

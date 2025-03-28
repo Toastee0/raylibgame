@@ -1,24 +1,9 @@
 /*******************************************************************************************
 *
-*   raylib [core] example - Sandbox simulation
-*
-*   Welcome to raylib!
-*
-*   To compile example, just press F5.
-*   Note that compiled executable is placed in the same folder as .c file
-*
-*   You can find all basic examples on C:\raylib\raylib\examples folder or
-*   raylib official webpage: www.raylib.com
-*
-*   Enjoy using raylib. :)
-*
-*   This example has been created using raylib 1.0 (www.raylib.com)
-*   raylib is licensed under an unmodified zlib/libpng license (View raylib.h for details)
-*
-*   Copyright (c) 2013-2024 Ramon Santamaria (@raysan5)
+*   raylib [core] example - Sandbox simulation with responsive UI
 *
 ********************************************************************************************/
-//code rules: no moisture can be destroyed, only moved, to conseve the total water in the simulation.
+// code rules: no moisture can be destroyed, only moved, to conseve the total water in the simulation.
 
 #include "raylib.h"
 #include <stddef.h>
@@ -29,7 +14,6 @@
 // Include our custom headers
 #include "src/cell_types.h"
 #include "src/grid.h"
-
 #include "src/cell_actions.h"
 #include "src/simulation.h"
 #include "src/input.h"
@@ -50,9 +34,50 @@ int currentSelectedType = CELL_TYPE_SOIL;  // Default to soil
 bool simulationRunning = false;  // Flag to control simulation state
 bool simulationPaused = true;    // Start with simulation paused
 
-// Global screen dimensions
-const int screenWidth = 1920;
-const int screenHeight = 1080;
+// Window and UI dimensions
+int windowWidth = 1920+300;
+int windowHeight = 1080;
+int uiPanelWidth = 300;  // Width of right side UI panel
+int gameWidth;           // Will be calculated based on grid dimensions
+int gameHeight;          // Will be calculated based on grid dimensions
+int minGameWidth = 800;  // Minimum game area width
+bool blackBackgroundDrawn = false;  // Flag to track initial drawing
+
+// Function to handle window resizing
+void HandleWindowResize(void) {
+    int newWidth = GetScreenWidth();
+    int newHeight = GetScreenHeight();
+    
+    // Calculate the actual game area (excluding UI panel)
+    int actualGameWidth = newWidth - uiPanelWidth;
+    
+    if (actualGameWidth < minGameWidth) {
+        actualGameWidth = minGameWidth;
+    }
+    
+    // Calculate new cell size based on game area and fixed grid dimensions
+    int newCellSizeWidth = actualGameWidth / GRID_WIDTH;
+    int newCellSizeHeight = newHeight / GRID_HEIGHT;
+    
+    // Use the smaller dimension to ensure grid fits
+    int newCellSize = (newCellSizeWidth < newCellSizeHeight) ? 
+                      newCellSizeWidth : newCellSizeHeight;
+    
+    // Ensure cell size is at least 2 pixels
+    if (newCellSize < 2) newCellSize = 2;
+    
+    // Update the global cell size
+    CELL_SIZE = newCellSize;
+    
+    // Update game area dimensions based on actual grid size
+    gameWidth = CELL_SIZE * GRID_WIDTH;
+    gameHeight = CELL_SIZE * GRID_HEIGHT;
+    
+    // Redraw black background after resize
+    blackBackgroundDrawn = false;
+    
+    TraceLog(LOG_INFO, "Window resized: Cell size adjusted to %d pixels", CELL_SIZE);
+}
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
@@ -60,17 +85,28 @@ const int screenHeight = 1080;
 static void UpdateDrawFrame(void);
 
 int main(void) {
-    InitWindow(screenWidth, screenHeight, "Sandbox");
-
+    // Initialize window with resizable flag
+    InitWindow(windowWidth, windowHeight, "Sandbox Simulation");
+    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    
     // Initialize grid
     InitGrid();
-
+    
+    // Set initial game dimensions
+    gameWidth = CELL_SIZE * GRID_WIDTH;
+    gameHeight = CELL_SIZE * GRID_HEIGHT;
+    
     SetTargetFPS(60);
-
+    
     while (!WindowShouldClose()) {
+        // Check if window was resized
+        if (IsWindowResized()) {
+            HandleWindowResize();
+        }
+        
         UpdateDrawFrame();
     }
-
+    
     // Cleanup
     CleanupGrid();
     CloseWindow();
@@ -90,21 +126,26 @@ static void UpdateDrawFrame(void) {
     }
     
     BeginDrawing();
-        ClearBackground(BLACK);
+        // Clear only once when resized
+        if (!blackBackgroundDrawn) {
+            ClearBackground(BLACK);
+            blackBackgroundDrawn = true;
+        }
+        
         DrawGameGrid();
-        DrawUI();
+        DrawUIOnRight(gameHeight, uiPanelWidth);
         
         // Draw other UI elements
         if (!simulationRunning) {
-            DrawRectangle(0, screenHeight/2 - 50, screenWidth, 100, Fade(BLACK, 0.7f));
+            DrawRectangle(0, GetScreenHeight()/2 - 50, gameWidth, 100, Fade(BLACK, 0.7f));
             DrawText("SET UP INITIAL STATE THEN PRESS SPACE TO START SIMULATION", 
-                    screenWidth/2 - MeasureText("SET UP INITIAL STATE THEN PRESS SPACE TO START SIMULATION", 30)/2,
-                    screenHeight/2 - 15, 30, WHITE);
+                    gameWidth/2 - MeasureText("SET UP INITIAL STATE THEN PRESS SPACE TO START SIMULATION", 20)/2,
+                    GetScreenHeight()/2 - 15, 20, WHITE);
         } else if (simulationPaused) {
-            DrawRectangle(0, screenHeight/2 - 50, screenWidth, 100, Fade(BLACK, 0.7f));
+            DrawRectangle(0, GetScreenHeight()/2 - 50, gameWidth, 100, Fade(BLACK, 0.7f));
             DrawText("SIMULATION PAUSED - PRESS SPACE TO RESUME", 
-                    screenWidth/2 - MeasureText("SIMULATION PAUSED - PRESS SPACE TO RESUME", 30)/2,
-                    screenHeight/2 - 15, 30, WHITE);
+                    gameWidth/2 - MeasureText("SIMULATION PAUSED - PRESS SPACE TO RESUME", 20)/2,
+                    GetScreenHeight()/2 - 15, 20, WHITE);
         }
     EndDrawing();
 }

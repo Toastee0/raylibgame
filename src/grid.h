@@ -4,9 +4,9 @@
 #include "cell_types.h"
 
 // Grid constants
-extern const int CELL_SIZE;
-extern const int GRID_WIDTH;
-extern const int GRID_HEIGHT;
+extern  int CELL_SIZE;
+extern  int GRID_WIDTH;
+extern  int GRID_HEIGHT;
 
 // Grid data
 extern GridCell** grid;

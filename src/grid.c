@@ -4,9 +4,9 @@
 #include "src/cell_defaults.h"
 
 // Grid constants
-const int CELL_SIZE = 8;
-const int GRID_WIDTH = 1920/CELL_SIZE;
-const int GRID_HEIGHT = 1080/CELL_SIZE;
+int CELL_SIZE = 8;
+int GRID_WIDTH = 1920/8;
+int GRID_HEIGHT = 1080/8;
 
 // Grid data
 GridCell** grid = NULL;
