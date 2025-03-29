@@ -1,2 +1,5 @@
-main.exe
-
+Screenshot 2025-03-29 121149.png
+obj/main.o
+obj/src/grid.o
+obj/src/simulation.o
+game.exe
