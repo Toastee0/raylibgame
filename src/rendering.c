@@ -8,85 +8,59 @@
 extern int brushRadius;
 extern int currentSelectedType;
 
-// Draw the game grid
+// Declare viewportX, viewportY, and cellSize as global variables
+int viewportX = 0;
+int viewportY = 0;
+int cellSize = 8; // Default value, will be updated dynamically in DrawGameGrid
+
+// Update the viewport and cell size dynamically based on the window resolution
 void DrawGameGrid(void) {
-    // Define the viewport area (example values, can be adjusted later)
-    int viewportX = 100;
-    int viewportY = 100;
-    int viewportWidth = 800;
-    int viewportHeight = 600;
+    // Get the current render dimensions
+    int screenWidth = GetRenderWidth();
+    int screenHeight = GetRenderHeight();
+
+    // Calculate DPI scaling factor
+    Vector2 dpiScale = GetWindowScaleDPI(); // Adjust viewport size based on DPI
+
+    // Use the horizontal DPI scaling factor for calculations
+    float dpiScaleFactor = dpiScale.x;
+
+    // Calculate UI scaling and viewport dimensions
+    float uiScale = (screenWidth >= 3840 && screenHeight >= 2160) ? 1.5f : 1.0f;
+    int uiWidth = 300 * uiScale * dpiScaleFactor; // UI panel width scales with resolution and DPI
+    int viewportWidth = screenWidth - uiWidth *2; // Subtract UI width from total screen width
+    int viewportHeight = screenHeight; // Use full screen height for viewport
+
+    // Adjust cell size dynamically (8x8 at 1080p fullscreen)
+    int baseCellSize = 8;
+    float scaleFactor = ((float)viewportHeight / 1080.0f) * dpiScaleFactor;
+    cellSize = baseCellSize * scaleFactor;
+
+    // Set the viewport to always start at the top-left corner of the window
+    viewportX = 0;
+    viewportY = 0;
 
     // Begin the scissor mode to restrict drawing to the viewport
     BeginScissorMode(viewportX, viewportY, viewportWidth, viewportHeight);
 
-    for(int i = 0; i < GRID_HEIGHT; i++) {
-        for(int j = 0; j < GRID_WIDTH; j++) {
-            // Add safety check to prevent undefined colors
-            Color cellColor = grid[i][j].baseColor;
-            
-            // Special case for air - only visible at high moisture levels
-            if(grid[i][j].type == CELL_TYPE_AIR) {
-                // Air with less than 75% moisture is invisible (black)
-                if(grid[i][j].moisture < 75) {
-                    cellColor = BLACK;
-                } else {
-                    // Above 75% moisture, air becomes increasingly visible/white
-                    // Calculate a brightness based on moisture (75-100 mapped to 0-255)
-                    int brightness = (grid[i][j].moisture - 75) * (255 / 25);
-                    cellColor = (Color){brightness, brightness, brightness, 255};
-                }
-                
-                // Update the stored color
-                grid[i][j].baseColor = cellColor;
+    // Draw only the cells within the viewport
+    int startRow = viewportY / cellSize;
+    int endRow = (viewportY + viewportHeight) / cellSize;
+    int startCol = viewportX / cellSize;
+    int endCol = (viewportX + viewportWidth) / cellSize;
+
+    for (int i = startRow; i < endRow; i++) {
+        for (int j = startCol; j < endCol; j++) {
+            if (i >= 0 && i < GRID_HEIGHT && j >= 0 && j < GRID_WIDTH) {
+                Color cellColor = grid[i][j].baseColor;
+                DrawRectangle(
+                    j * cellSize - viewportX, // No offset for UI width since viewport starts at (0, 0)
+                    i * cellSize - viewportY,
+                    cellSize - 1,
+                    cellSize - 1,
+                    cellColor
+                );
             }
-            // Fix for pink, purple or undefined colors for other cell types
-            else if((cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 200) || 
-                    (cellColor.r > 200 && cellColor.g < 100 && cellColor.b > 100)) {
-                // This is detecting pink/purple-ish colors
-                switch(grid[i][j].type) {
-                    case CELL_TYPE_SOIL: // Soil
-                        {
-                            // Re-calculate soil color based on proper moisture range
-                            float intensityPct = (float)grid[i][j].moisture / 100.0f;
-                            cellColor = (Color){
-                                127 - (intensityPct * 51),
-                                106 - (intensityPct * 43),
-                                79 - (intensityPct * 32),
-                                255
-                            };
-                        }
-                        break;
-                    case CELL_TYPE_WATER: // Water
-                        {
-                            // Re-calculate water color based on proper moisture range
-                            float intensityPct = (float)grid[i][j].moisture / 100.0f;
-                            cellColor = (Color){
-                                0 + (int)(200 * (1.0f - intensityPct)),
-                                120 + (int)(135 * (1.0f - intensityPct)),
-                                255,
-                                255
-                            };
-                        }
-                        break;
-                    case CELL_TYPE_PLANT: // Plant
-                        cellColor = GREEN;
-                        break;
-                    default:
-                        cellColor = BLACK; // Default fallback
-                        break;
-                }
-                
-                // Update the stored color
-                grid[i][j].baseColor = cellColor;
-            }
-            
-            DrawRectangle(
-                j * CELL_SIZE,
-                i * CELL_SIZE,
-                CELL_SIZE - 1,
-                CELL_SIZE - 1,
-                cellColor
-            );
         }
     }
 
@@ -156,7 +130,13 @@ void DrawUI(void) {
     
     // Draw current brush at mouse position
     Vector2 mousePos = GetMousePosition();
-    DrawCircleLines((int)mousePos.x, (int)mousePos.y, brushRadius * CELL_SIZE, WHITE);
+
+    // Adjust cursor position based on viewport transformations
+    int adjustedMouseX = (int)((mousePos.x + viewportX) / cellSize) * cellSize;
+    int adjustedMouseY = (int)((mousePos.y + viewportY) / cellSize) * cellSize;
+
+    // Draw current brush at adjusted mouse position
+    DrawCircleLines(adjustedMouseX, adjustedMouseY, brushRadius * CELL_SIZE, WHITE);
     
     // Draw other UI elements
     DrawFPS(10, 10);
@@ -178,16 +158,26 @@ void DrawUI(void) {
 
 // Draw UI panel on the right side of the game area
 void DrawUIOnRight(int height, int width) {
-    // Get the starting X position for the UI panel (right after the game area)
-    extern int gameWidth;
-    int uiStartX = gameWidth;
-    
+    // Dynamically calculate the UI panel width based on the intended fixed width of 300 pixels
+    int screenWidth = GetScreenWidth();
+    Vector2 dpiScale = GetWindowScaleDPI();
+    float dpiScaleFactor = dpiScale.x;
+    int uiWidth = 300 * dpiScaleFactor; // Scale the fixed width by the DPI factor
+
+    // Ensure the UI width does not exceed a reasonable percentage of the screen width
+    if (uiWidth > screenWidth * 0.3) {
+        uiWidth = screenWidth * 0.3; // Cap the UI width at 30% of the screen width
+    }
+
+    // Get the starting X position for the UI panel (align to the top-right corner)
+    int uiStartX = screenWidth - (uiWidth*2); // Correctly position the UI panel based on its width
+
     // Draw background for UI panel
-    DrawRectangle(uiStartX, 0, width, height, Fade(DARKGRAY, 0.8f));
-    
+    DrawRectangle(uiStartX, 0, uiWidth, height, Fade(DARKGRAY, 0.8f));
+
     // Draw title
     DrawText("Sandbox Controls", uiStartX + 20, 20, 24, WHITE);
-    
+
     // Cell type selection UI
     DrawText("Materials:", uiStartX + 20, 60, 20, WHITE);
     
@@ -212,7 +202,7 @@ void DrawUIOnRight(int height, int width) {
     };
     
     // Calculate buttons per row based on UI panel width
-    int buttonsPerRow = (width - 40) / (buttonSize + padding);
+    int buttonsPerRow = (uiWidth - 40) / (buttonSize + padding);
     if (buttonsPerRow < 1) buttonsPerRow = 1;
     
     // Draw cell type buttons
@@ -242,7 +232,7 @@ void DrawUIOnRight(int height, int width) {
     DrawText(brushText, startX, controlsY, 20, WHITE);
     
     // Draw brush preview
-    DrawCircleLines(startX + width/2, controlsY + 50, brushRadius * 3, WHITE);
+    DrawCircleLines(startX + uiWidth/2, controlsY + 50, brushRadius * 3, WHITE);
     
     // Draw simulation controls
     int simControlsY = controlsY + 100;

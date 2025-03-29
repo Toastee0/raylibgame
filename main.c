@@ -51,8 +51,12 @@ void HandleWindowResize(void) {
     static int lastWidth = 0;
     static int lastHeight = 0;
 
-    int newWidth = GetScreenWidth();
-    int newHeight = GetScreenHeight();
+    // Get DPI scaling factor
+    Vector2 dpiScale = GetWindowScaleDPI();
+
+    // Calculate actual pixel dimensions by dividing by DPI scaling factor
+    int newWidth = (int)(GetScreenWidth() / dpiScale.x);
+    int newHeight = (int)(GetScreenHeight() / dpiScale.y);
 
     // Only proceed if the window dimensions have changed
     if (newWidth != lastWidth || newHeight != lastHeight) {

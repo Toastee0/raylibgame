@@ -5,8 +5,8 @@
 
 // Grid constants
 int CELL_SIZE = 8;
-int GRID_WIDTH = 1920/8;
-int GRID_HEIGHT = 1080/8;
+int GRID_WIDTH = 1920 * 2 / 8; // Double the width
+int GRID_HEIGHT = 1080 * 2 / 8; // Double the height
 
 // Grid data
 GridCell** grid = NULL;
