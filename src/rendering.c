@@ -10,6 +10,15 @@ extern int currentSelectedType;
 
 // Draw the game grid
 void DrawGameGrid(void) {
+    // Define the viewport area (example values, can be adjusted later)
+    int viewportX = 100;
+    int viewportY = 100;
+    int viewportWidth = 800;
+    int viewportHeight = 600;
+
+    // Begin the scissor mode to restrict drawing to the viewport
+    BeginScissorMode(viewportX, viewportY, viewportWidth, viewportHeight);
+
     for(int i = 0; i < GRID_HEIGHT; i++) {
         for(int j = 0; j < GRID_WIDTH; j++) {
             // Add safety check to prevent undefined colors
@@ -80,6 +89,9 @@ void DrawGameGrid(void) {
             );
         }
     }
+
+    // End the scissor mode
+    EndScissorMode();
 }
 
 // Draw UI elements
