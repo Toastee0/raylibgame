@@ -14,6 +14,15 @@ extern bool simulationPaused;
 extern int gameWidth;
 extern int uiPanelWidth;
 
+// Include viewportX and cellSize as external variables
+extern int viewportX;
+extern int viewportY;
+extern int cellSize;
+
+// Define viewportContentOffsetX and viewportContentOffsetY here
+int viewportContentOffsetX = 0;
+int viewportContentOffsetY = 0;
+
 // Track if mouse was initially pressed in UI area
 static bool mouseStartedInUI = false;
 
@@ -37,6 +46,35 @@ void HandleInput(void) {
         brushRadius = (brushRadius < 1) ? 1 : ((brushRadius > 32) ? 32 : brushRadius);
     }
     
+    // Handle viewport panning with arrow keys
+    int panSpeed = 10; // Speed of panning in pixels
+
+    // Update viewport panning logic to use separate content offset
+    if (IsKeyDown(KEY_RIGHT)) {
+        viewportContentOffsetX += panSpeed;
+        if (viewportContentOffsetX > GRID_WIDTH * cellSize - gameWidth) {
+            viewportContentOffsetX = GRID_WIDTH * cellSize - gameWidth; // Prevent scrolling outside the gamefield
+        }
+    }
+    if (IsKeyDown(KEY_LEFT)) {
+        viewportContentOffsetX -= panSpeed;
+        if (viewportContentOffsetX < 0) {
+            viewportContentOffsetX = 0; // Prevent scrolling outside the gamefield
+        }
+    }
+
+    // Adjust the calculation for the viewport height to include all visible cells
+    int viewportHeight = GetRenderHeight() - 80; // Subtract 80 pixels for UI
+    int totalVisibleCells = viewportHeight / cellSize;
+
+    // Ensure the grid height accounts for all visible cells
+    if (GRID_HEIGHT < totalVisibleCells) {
+        GRID_HEIGHT = totalVisibleCells;
+    }
+
+    // Lock vertical scrolling
+    viewportContentOffsetY = 0;
+    
     Vector2 mousePos = GetMousePosition();
     bool isInGameArea = mousePos.x < gameWidth;
     
@@ -47,23 +85,27 @@ void HandleInput(void) {
         // Calculate UI button positions - must match DrawUIOnRight
         int buttonSize = 64;
         int padding = 10;
-        int startX = gameWidth + 20;
+        int startX = 1640; // Set startX to the correct position for the first button
         int startY = 90;
         
-        // Calculate buttons per row based on UI panel width
-        int buttonsPerRow = (uiPanelWidth - 40) / (buttonSize + padding);
-        if (buttonsPerRow < 1) buttonsPerRow = 1;
-        
+        // Correct the calculation for buttons per row
+        int buttonsPerRow = 3; // Set to the actual number of buttons per row being drawn
+
         // Check each material button
         for (int i = 0; i <= CELL_TYPE_MOSS; i++) {
             int row = i / buttonsPerRow;
             int col = i % buttonsPerRow;
-            int posX = startX + col * (buttonSize + padding);
-            int posY = startY + row * (buttonSize + padding + 20);
-            
-            // Check if click is within this button
-            if (mousePos.x >= posX && mousePos.x < posX + buttonSize &&
-                mousePos.y >= posY && mousePos.y < posY + buttonSize) {
+
+            // Adjust button positions to match actual screen coordinates
+            Vector2 dpiScale = GetWindowScaleDPI();
+            float dpiScaleFactor = dpiScale.x;
+
+            int posX = startX + col * (buttonSize + padding) * dpiScaleFactor;
+            int posY = startY + row * (buttonSize + padding) * dpiScaleFactor;
+
+            // Adjust button size and padding to match the UI rendering with scaling
+            if (mousePos.x >= posX && mousePos.x < posX + buttonSize * dpiScaleFactor &&
+                mousePos.y >= posY && mousePos.y < posY + buttonSize * dpiScaleFactor) {
                 currentSelectedType = i;
                 break;
             }
@@ -77,13 +119,13 @@ void HandleInput(void) {
         // Only allow drawing if mouse didn't start in UI area
         if (!mouseStartedInUI) {
             // Handle cell placement
-            int gridX = (int)(mousePos.x / CELL_SIZE);
-            int gridY = (int)(mousePos.y / CELL_SIZE);
+            // Adjust mouse position for scrolling offset
+            int gridX = (int)((mousePos.x + viewportContentOffsetX) / cellSize);
+            int gridY = (int)((mousePos.y + viewportContentOffsetY) / cellSize);
             
-            // Skip if out of bounds
-            if (gridX < 0 || gridX >= GRID_WIDTH || gridY < 0 || gridY >= GRID_HEIGHT) {
-                return;
-            }
+            // Ensure the grid coordinates are clamped within bounds
+            gridX = (gridX < 0) ? 0 : (gridX >= GRID_WIDTH ? GRID_WIDTH - 1 : gridX);
+            gridY = (gridY < 0) ? 0 : (gridY >= GRID_HEIGHT ? GRID_HEIGHT - 1 : gridY);
             
             // Handle painting with mouse buttons
             if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {

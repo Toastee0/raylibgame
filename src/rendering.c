@@ -13,6 +13,10 @@ int viewportX = 0;
 int viewportY = 0;
 int cellSize = 8; // Default value, will be updated dynamically in DrawGameGrid
 
+// Declare viewportContentOffsetX and viewportContentOffsetY as external variables
+extern int viewportContentOffsetX;
+extern int viewportContentOffsetY;
+
 // Update the viewport and cell size dynamically based on the window resolution
 void DrawGameGrid(void) {
     // Get the current render dimensions
@@ -29,35 +33,54 @@ void DrawGameGrid(void) {
     float uiScale = (screenWidth >= 3840 && screenHeight >= 2160) ? 1.5f : 1.0f;
     int uiWidth = 300 * uiScale * dpiScaleFactor; // UI panel width scales with resolution and DPI
     int viewportWidth = screenWidth - uiWidth *2; // Subtract UI width from total screen width
-    int viewportHeight = screenHeight; // Use full screen height for viewport
+
+    // Revert to the previously working rendering logic
+    int viewportHeight = GetRenderHeight() - 80; // Subtract 80 pixels for UI
+    int totalVisibleCells = viewportHeight / cellSize;
+
+    // Ensure the grid height matches the viewport height
+    if (GRID_HEIGHT < totalVisibleCells) {
+        GRID_HEIGHT = totalVisibleCells;
+    }
 
     // Adjust cell size dynamically (8x8 at 1080p fullscreen)
     int baseCellSize = 8;
     float scaleFactor = ((float)viewportHeight / 1080.0f) * dpiScaleFactor;
     cellSize = baseCellSize * scaleFactor;
 
-    // Set the viewport to always start at the top-left corner of the window
-    viewportX = 0;
-    viewportY = 0;
-
     // Begin the scissor mode to restrict drawing to the viewport
     BeginScissorMode(viewportX, viewportY, viewportWidth, viewportHeight);
 
-    // Draw only the cells within the viewport
-    int startRow = viewportY / cellSize;
-    int endRow = (viewportY + viewportHeight) / cellSize;
-    int startCol = viewportX / cellSize;
-    int endCol = (viewportX + viewportWidth) / cellSize;
+    // Adjust rendering logic to use viewportContentOffsetX and viewportContentOffsetY
+    int startRow = viewportContentOffsetY / cellSize;
 
+    // Ensure the viewport includes the bottom border
+    totalVisibleCells = (viewportHeight + cellSize - 1) / cellSize; // Round up to include partially visible cells
+
+    // Adjust the endRow calculation to include the bottom border
+    int endRow = (viewportContentOffsetY + viewportHeight + cellSize - 1) / cellSize;
+    if (endRow > GRID_HEIGHT) {
+        endRow = GRID_HEIGHT; // Clamp to grid height
+    }
+
+    int startCol = viewportContentOffsetX / cellSize;
+    int endCol = (viewportContentOffsetX + viewportWidth + cellSize - 1) / cellSize; // Include partially visible cells
+
+    // Ensure endCol does not exceed the grid width
+    if (endCol > GRID_WIDTH) {
+        endCol = GRID_WIDTH;
+    }
+
+    // Draw only the cells within the viewport, adjusted for content offset
     for (int i = startRow; i < endRow; i++) {
         for (int j = startCol; j < endCol; j++) {
             if (i >= 0 && i < GRID_HEIGHT && j >= 0 && j < GRID_WIDTH) {
                 Color cellColor = grid[i][j].baseColor;
                 DrawRectangle(
-                    j * cellSize - viewportX, // No offset for UI width since viewport starts at (0, 0)
-                    i * cellSize - viewportY,
-                    cellSize - 1,
-                    cellSize - 1,
+                    (j - startCol) * cellSize, // Adjust for content offset
+                    (i - startRow) * cellSize,
+                    cellSize, // Use dynamic cell size for width
+                    cellSize, // Use dynamic cell size for height
                     cellColor
                 );
             }
@@ -108,7 +131,7 @@ void DrawUI(void) {
     
     // Draw brush size indicator
     char brushText[32];
-    sprintf(brushText, "Brush: %d", brushRadius);
+    snprintf(brushText, sizeof(brushText), "Brush: %d", brushRadius);
     DrawText(brushText, startX, startY + buttonSize + 10, 20, WHITE);
     
     // Draw the brush size indicator in top-right corner
@@ -125,15 +148,34 @@ void DrawUI(void) {
     
     // Draw text showing the actual brush radius
     char radiusText[10];
-    sprintf(radiusText, "R: %d", brushRadius);
+    snprintf(radiusText, sizeof(radiusText), "R: %d", brushRadius);
     DrawText(radiusText, centerX - 20, centerY - 10, 20, WHITE);
     
     // Draw current brush at mouse position
-    Vector2 mousePos = GetMousePosition();
 
-    // Adjust cursor position based on viewport transformations
-    int adjustedMouseX = (int)((mousePos.x + viewportX) / cellSize) * cellSize;
-    int adjustedMouseY = (int)((mousePos.y + viewportY) / cellSize) * cellSize;
+    // Scale mouse position to account for DPI
+    Vector2 dpiScale = GetWindowScaleDPI();
+
+    // Refine the logic to correctly map mouse position to grid cells
+
+    // Calculate the cell under the mouse
+    int cellX = (int)((GetMousePosition().x + viewportContentOffsetX) / cellSize);
+    int cellY = (int)((GetMousePosition().y + viewportContentOffsetY) / cellSize);
+
+    // Ensure the cell coordinates are clamped within the grid bounds
+    cellX = (cellX < 0) ? 0 : (cellX >= GRID_WIDTH ? GRID_WIDTH - 1 : cellX);
+    cellY = (cellY < 0) ? 0 : (cellY >= GRID_HEIGHT ? GRID_HEIGHT - 1 : cellY);
+
+    // Correct scaling for mouse position to grid cell mapping
+    float cellSizeX = 1615.0f / 230.0f; // Calculate cell size based on given mouse and cell coordinates
+    float cellSizeY = 978.0f / 139.0f;
+
+    // Use the average cell size for consistent scaling
+    cellSize = (int)((cellSizeX + cellSizeY) / 2.0f);
+
+    // Update the adjusted mouse position for drawing
+    int adjustedMouseX = cellX * cellSize + cellSize / 2 + viewportX;
+    int adjustedMouseY = cellY * cellSize + cellSize / 2 + viewportY;
 
     // Draw current brush at adjusted mouse position
     DrawCircleLines(adjustedMouseX, adjustedMouseY, brushRadius * CELL_SIZE, WHITE);
@@ -147,10 +189,9 @@ void DrawUI(void) {
     DrawText("Middle Click: Place Water", 10, 70, 20, WHITE);
     DrawText("Mouse Wheel: Adjust brush size", 10, 90, 20, WHITE);
     
-    // Display total moisture in the system
-    char moistureText[50];
-    sprintf(moistureText, "Total Moisture: %d", CalculateTotalMoisture());
-    DrawText(moistureText, 10, 110, 20, WHITE);
+
+    
+   
     
     // Add text at bottom of screen
     DrawText("Tree Growth Simulation", 10, GetScreenHeight() - 30, 20, WHITE);
@@ -228,7 +269,7 @@ void DrawUIOnRight(int height, int width) {
     
     // Draw brush size text
     char brushText[32];
-    sprintf(brushText, "Brush Size: %d", brushRadius);
+    snprintf(brushText, sizeof(brushText), "Brush Size: %d", brushRadius);
     DrawText(brushText, startX, controlsY, 20, WHITE);
     
     // Draw brush preview
@@ -240,12 +281,70 @@ void DrawUIOnRight(int height, int width) {
     
     DrawText("Space: Start/Pause", startX, simControlsY + 30, 18, WHITE);
     DrawText("Mouse Wheel: Adjust brush", startX, simControlsY + 55, 18, WHITE);
-    
+     // Display cursor position and cell grid position in the info panel
+
     // Draw moisture info
     int moistureY = simControlsY + 90;
     char moistureText[50];
-    sprintf(moistureText, "Total Moisture: %d", CalculateTotalMoisture());
+    snprintf(moistureText, sizeof(moistureText), "Total Moisture: %d", CalculateTotalMoisture());
     DrawText(moistureText, startX, moistureY, 18, WHITE);
+
+    // Add current mouse position to the UI panel
+    char mousePosText[50];
+    snprintf(mousePosText, sizeof(mousePosText), "Mouse: (%.1f, %.1f)", GetMousePosition().x, GetMousePosition().y);
+    DrawText(mousePosText, startX, moistureY + 30, 18, WHITE);
+
+    // Initialize default values for the UI strings
+    static char cellMoistureText[50] = "Moisture: N/A";
+    static char cellTypeText[50] = "Type: N/A";
+
+    // Check if the cursor is over the play area
+
+    // Add the cell under cursor function back to the UI panel
+    static char cellUnderCursorText[50] = "Cell: N/A";
+
+    // Ensure the grid exists and is initialized before accessing it
+    if (grid != NULL) {
+        // Check if the cursor is over the play area
+        Vector2 mousePos = GetMousePosition();
+        if (mousePos.x >= viewportX && mousePos.x < viewportX + width &&
+            mousePos.y >= viewportY && mousePos.y < viewportY + height) {
+
+            // Calculate the cell under the mouse
+            int cellX = (int)((mousePos.x + viewportContentOffsetX) / cellSize);
+            int cellY = (int)((mousePos.y + viewportContentOffsetY) / cellSize);
+
+            // Ensure the cell coordinates are clamped within the viewport bounds
+            if (cellX > viewportX && cellX < viewportX + width && cellY > viewportY && cellY < viewportY + height) {
+                snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: (%d, %d)", cellX, cellY);
+                snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: %d", grid[cellY][cellX].moisture);
+                const char* cellTypeNames[] = {"Air", "Soil", "Water", "Plant", "Rock", "Moss"};
+                snprintf(cellTypeText, sizeof(cellTypeText), "Type: %s", cellTypeNames[grid[cellY][cellX].type]);
+            } else {
+                // Reset to default values if the cell is out of bounds
+                snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: N/A");
+                snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
+                snprintf(cellTypeText, sizeof(cellTypeText), "Type: N/A");
+            }
+        } else {
+            // Reset to default values if the cursor is outside the play area
+            snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: N/A");
+            snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
+            snprintf(cellTypeText, sizeof(cellTypeText), "Type: N/A");
+        }
+    } else {
+        // Reset to default values if the grid is not initialized
+        snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: N/A");
+        snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
+        snprintf(cellTypeText, sizeof(cellTypeText), "Type: N/A");
+    }
+
+    // Draw the cell under cursor text
+    DrawText(cellUnderCursorText, startX, moistureY + 110, 18, WHITE);
+
+    // Draw the UI strings
+    DrawText(cellMoistureText, startX, moistureY + 70, 18, WHITE);
+    DrawText(cellTypeText, startX, moistureY + 90, 18, WHITE);
     
     // Draw performance meter
     DrawFPS(startX, height - 30);
