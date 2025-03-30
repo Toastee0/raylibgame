@@ -59,6 +59,16 @@ void UpdateGrid(void) {
     static int updateCount = 0;
     updateCount++;
 
+    // Ensure all border cells are consistently initialized to DARKGRAY
+    for (int y = 0; y < GRID_HEIGHT; y++) {
+        for (int x = 0; x < GRID_WIDTH; x++) {
+            if (x == 0 || x == GRID_WIDTH - 1 || y == 0 || y == GRID_HEIGHT - 1) {
+                grid[y][x].type = CELL_TYPE_BORDER;
+                grid[y][x].baseColor = DARKGRAY; // Set all border cells to DARKGRAY
+            }
+        }
+    }
+
     // Update all cell types in the right order
     UpdateSoil();         // Soil falls
     UpdateWater();        // Water flows
@@ -182,126 +192,66 @@ void UpdateSoil(void) {
 void UpdateWater(void) {
     bool processRightToLeft = GetRandomValue(0, 1);
 
-    // Process water from bottom to top for falling mechanics
-    for (int y = GRID_HEIGHT - 1; y >= 0; y--) {
-        // Alternate direction for each row
-        processRightToLeft = !processRightToLeft;
-
-        int startX, endX, stepX;
-        if (processRightToLeft) {
-            startX = GRID_WIDTH - 1;
-            endX = -1;
-            stepX = -1;
-        } else {
-            startX = 0;
-            endX = GRID_WIDTH;
-            stepX = 1;
-        }
-
-        for (int x = startX; x != endX; x += stepX) {
+    // Ensure water falls properly and exhibits density sorting and cohesion
+    for (int y = GRID_HEIGHT - 2; y >= 1; y--) { // Start from the second-to-last row
+        for (int x = 1; x < GRID_WIDTH - 1; x++) {
             if (grid[y][x].type == CELL_TYPE_WATER) {
                 bool hasMoved = false;
                 grid[y][x].is_falling = false;
 
-                bool isAtBottomEdge = (y == GRID_HEIGHT - 1);
+                // Check if water can fall straight down
+                if (grid[y + 1][x].type == CELL_TYPE_AIR && y + 1 < GRID_HEIGHT - 1) {
+                    MoveCell(x, y, x, y + 1);
+                    hasMoved = true;
+                } 
+                // Check if water can fall diagonally
+                else {
+                    bool canFallDiagonalLeft = (x > 1 && y + 1 < GRID_HEIGHT - 1 && grid[y + 1][x - 1].type == CELL_TYPE_AIR);
+                    bool canFallDiagonalRight = (x < GRID_WIDTH - 2 && y + 1 < GRID_HEIGHT - 1 && grid[y + 1][x + 1].type == CELL_TYPE_AIR);
 
-                // Check for moisture absorption
-                if (grid[y][x].moisture < 100) {
-                    if (!isAtBottomEdge && grid[y + 1][x].type == CELL_TYPE_AIR) {
-                        int canabsorb = grid[y + 1][x].moisture - (100 - grid[y][x].moisture);
-                        int leftover = grid[y + 1][x].moisture - canabsorb;
-                        grid[y][x].moisture += canabsorb;
-                        grid[y + 1][x].moisture = leftover;
+                    if (canFallDiagonalLeft && canFallDiagonalRight) {
+                        int direction = (GetRandomValue(0, 100) < 50) ? -1 : 1;
+                        MoveCell(x, y, x + direction, y + 1);
+                        hasMoved = true;
+                    } else if (canFallDiagonalLeft) {
+                        MoveCell(x, y, x - 1, y + 1);
+                        hasMoved = true;
+                    } else if (canFallDiagonalRight) {
+                        MoveCell(x, y, x + 1, y + 1);
+                        hasMoved = true;
                     }
                 }
 
-                // Count neighboring water cells for cohesion
-                int waterNeighbors = 0;
-
-                // Check horizontal neighbors
-                for (int i = x - 1; i >= 0 && i >= x - 3; i--) {
-                    if (grid[y][i].type == CELL_TYPE_WATER) {
-                        waterNeighbors++;
-                    } else {
-                        break;
-                    }
-                }
-
-                for (int i = x + 1; i < GRID_WIDTH && i <= x + 3; i++) {
-                    if (grid[y][i].type == CELL_TYPE_WATER) {
-                        waterNeighbors++;
-                    } else {
-                        break;
-                    }
-                }
-
-                // Check vertical neighbors
-                if (y > 0 && grid[y - 1][x].type == CELL_TYPE_WATER) {
-                    waterNeighbors += 2;
-                }
-
-                if (y < GRID_HEIGHT - 1 && grid[y + 1][x].type == CELL_TYPE_WATER) {
-                    waterNeighbors += 2;
-                }
-
-                // Check if water has many neighbors (high cohesion)
-                bool hasHighCohesion = (waterNeighbors >= 3);
-
-                // Check if water can fall
-                bool canFallDown = (!isAtBottomEdge && grid[y + 1][x].type == CELL_TYPE_AIR);
-                bool canFallDiagonalLeft = (!isAtBottomEdge && x > 0 && grid[y + 1][x - 1].type == CELL_TYPE_AIR);
-                bool canFallDiagonalRight = (!isAtBottomEdge && x < GRID_WIDTH - 1 && grid[y + 1][x + 1].type == CELL_TYPE_AIR);
-                bool canFallAnyDirection = canFallDown || canFallDiagonalLeft || canFallDiagonalRight;
-
-                // If water can fall, apply cohesion rules for falling
-                if (canFallAnyDirection) {
-                    if (canFallDown) {
-                        // All water can fall straight down
+                // Density sorting: water should sink below less dense materials
+                if (!hasMoved && y < GRID_HEIGHT - 1) {
+                    if (grid[y + 1][x].type != CELL_TYPE_WATER && grid[y + 1][x].type != CELL_TYPE_AIR) {
                         MoveCell(x, y, x, y + 1);
                         hasMoved = true;
                     }
-                    // Only water with low cohesion can fall diagonally
-                    else if (!hasHighCohesion) {
-                        if (canFallDiagonalLeft && canFallDiagonalRight) {
-                            int direction = (GetRandomValue(0, 100) < 50) ? -1 : 1;
-                            MoveCell(x, y, x + direction, y + 1);
-                            hasMoved = true;
-                        } else if (canFallDiagonalLeft) {
-                            MoveCell(x, y, x - 1, y + 1);
-                            hasMoved = true;
-                        } else if (canFallDiagonalRight) {
-                            MoveCell(x, y, x + 1, y + 1);
-                            hasMoved = true;
-                        }
+                }
+
+                // Cohesion: water should try to stay together
+                if (!hasMoved) {
+                    bool canMoveLeft = (x > 1 && grid[y][x - 1].type == CELL_TYPE_WATER);
+                    bool canMoveRight = (x < GRID_WIDTH - 2 && grid[y][x + 1].type == CELL_TYPE_WATER);
+
+                    if (canMoveLeft && canMoveRight) {
+                        int direction = (GetRandomValue(0, 100) < 50) ? -1 : 1;
+                        MoveCell(x, y, x + direction, y);
+                    } else if (canMoveLeft) {
+                        MoveCell(x, y, x - 1, y);
+                    } else if (canMoveRight) {
+                        MoveCell(x, y, x + 1, y);
                     }
                 }
-                // If water cannot fall, it tries to spread horizontally
-                else {
-                    bool canFlowLeft = (x > 0 && grid[y][x - 1].type == CELL_TYPE_AIR);
-                    bool canFlowRight = (x < GRID_WIDTH - 1 && grid[y][x + 1].type == CELL_TYPE_AIR);
 
-                    // Horizontal spread is influenced by cohesion but still possible
-                    // More cohesion = lower chance to spread
-                    int spreadChance = hasHighCohesion ? 30 : 70;
-
-                    if (GetRandomValue(0, 100) < spreadChance) {
-                        if (canFlowLeft && canFlowRight) {
-                            int leftBias = processRightToLeft ? 60 : 40;
-                            int flowDir = (GetRandomValue(0, 100) < leftBias) ? -1 : 1;
-                            MoveCell(x, y, x + flowDir, y);
-                            hasMoved = true;
-                        } else if (canFlowLeft) {
-                            MoveCell(x, y, x - 1, y);
-                            hasMoved = true;
-                        } else if (canFlowRight) {
-                            MoveCell(x, y, x + 1, y);
-                            hasMoved = true;
-                        }
-                    }
+                // Prevent water from affecting border tiles
+                if (x == 1 || x == GRID_WIDTH - 2 || y == 1 || y == GRID_HEIGHT - 2) {
+                    hasMoved = false;
                 }
 
                 // Update falling state based on movement
-                grid[y][x].is_falling = hasMoved && canFallAnyDirection;
+                grid[y][x].is_falling = hasMoved;
             }
         }
     }

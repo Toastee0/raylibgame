@@ -76,7 +76,20 @@ void HandleInput(void) {
     viewportContentOffsetY = 0;
     
     Vector2 mousePos = GetMousePosition();
-    bool isInGameArea = mousePos.x < gameWidth;
+
+    // Correct the calculation for determining if the cursor is in the game area
+    bool isInGameArea = mousePos.x >= viewportX && mousePos.x < viewportX + gameWidth &&
+                        mousePos.y >= viewportY && mousePos.y < viewportY + viewportHeight;
+
+    // Correct the calculation for determining if the cursor is over the UI panel
+    int uiStartX = GetScreenWidth() - uiPanelWidth; // Correctly calculate the UI panel's starting X position
+
+    // Check if the cursor is over the UI panel
+    if (mousePos.x >= uiStartX && mousePos.x < GetScreenWidth()) {
+        mouseStartedInUI = true;
+    } else {
+        mouseStartedInUI = false;
+    }
     
     // Handle UI interaction
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isInGameArea) {
@@ -120,19 +133,18 @@ void HandleInput(void) {
         if (!mouseStartedInUI) {
             // Handle cell placement
             // Adjust mouse position for scrolling offset
-            int gridX = (int)((mousePos.x + viewportContentOffsetX) / cellSize);
-            int gridY = (int)((mousePos.y + viewportContentOffsetY) / cellSize);
-            
-            // Ensure the grid coordinates are clamped within bounds
-            gridX = (gridX < 0) ? 0 : (gridX >= GRID_WIDTH ? GRID_WIDTH - 1 : gridX);
-            gridY = (gridY < 0) ? 0 : (gridY >= GRID_HEIGHT ? GRID_HEIGHT - 1 : gridY);
-            
-            // Handle painting with mouse buttons
-            if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-                PlaceCircularPattern(gridX, gridY, currentSelectedType, brushRadius);
-            } else if (IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) {
-                // Right click erases (places air)
-                PlaceCircularPattern(gridX, gridY, CELL_TYPE_AIR, brushRadius);
+            int gridX = (int)((mousePos.x - viewportX + viewportContentOffsetX) / cellSize);
+            int gridY = (int)((mousePos.y - viewportY + viewportContentOffsetY) / cellSize);
+
+            // Ensure the grid coordinates are clamped within the viewport bounds
+            if (gridX > 0 && gridX < (viewportX + gameWidth) / cellSize &&
+                gridY > 0 && gridY < (viewportY + viewportHeight) / cellSize) {
+                // Handle cell placement logic here
+                if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+                    PlaceCircularPattern(gridX, gridY, currentSelectedType, brushRadius);
+                } else if (IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) {
+                    PlaceCircularPattern(gridX, gridY, CELL_TYPE_AIR, brushRadius);
+                }
             }
         }
     }

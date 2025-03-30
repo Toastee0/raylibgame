@@ -32,44 +32,37 @@ void DrawGameGrid(void) {
     // Calculate UI scaling and viewport dimensions
     float uiScale = (screenWidth >= 3840 && screenHeight >= 2160) ? 1.5f : 1.0f;
     int uiWidth = 300 * uiScale * dpiScaleFactor; // UI panel width scales with resolution and DPI
-    int viewportWidth = screenWidth - uiWidth *2; // Subtract UI width from total screen width
+    int viewportWidth = screenWidth - uiWidth * 2; // Subtract UI width from total screen width
 
-    // Revert to the previously working rendering logic
+    // Correct the calculation for the viewport height to ensure it matches the visible area
     int viewportHeight = GetRenderHeight() - 80; // Subtract 80 pixels for UI
-    int totalVisibleCells = viewportHeight / cellSize;
 
-    // Ensure the grid height matches the viewport height
-    if (GRID_HEIGHT < totalVisibleCells) {
-        GRID_HEIGHT = totalVisibleCells;
+    // Adjust the endRow calculation to ensure it fits within the viewport
+    int endRow = (viewportContentOffsetY + viewportHeight) / cellSize;
+    if ((viewportContentOffsetY + viewportHeight) % cellSize != 0) {
+        endRow += 1; // Include partially visible rows
     }
-
-    // Adjust cell size dynamically (8x8 at 1080p fullscreen)
-    int baseCellSize = 8;
-    float scaleFactor = ((float)viewportHeight / 1080.0f) * dpiScaleFactor;
-    cellSize = baseCellSize * scaleFactor;
-
-    // Begin the scissor mode to restrict drawing to the viewport
-    BeginScissorMode(viewportX, viewportY, viewportWidth, viewportHeight);
-
-    // Adjust rendering logic to use viewportContentOffsetX and viewportContentOffsetY
-    int startRow = viewportContentOffsetY / cellSize;
-
-    // Ensure the viewport includes the bottom border
-    totalVisibleCells = (viewportHeight + cellSize - 1) / cellSize; // Round up to include partially visible cells
-
-    // Adjust the endRow calculation to include the bottom border
-    int endRow = (viewportContentOffsetY + viewportHeight + cellSize - 1) / cellSize;
     if (endRow > GRID_HEIGHT) {
         endRow = GRID_HEIGHT; // Clamp to grid height
     }
 
-    int startCol = viewportContentOffsetX / cellSize;
-    int endCol = (viewportContentOffsetX + viewportWidth + cellSize - 1) / cellSize; // Include partially visible cells
+    // Ensure the grid height matches the viewport height
+    int totalVisibleCells = viewportHeight / cellSize;
+    if (GRID_HEIGHT > totalVisibleCells) {
+        GRID_HEIGHT = totalVisibleCells;
+    }
 
-    // Ensure endCol does not exceed the grid width
+    // Adjust rendering logic to use viewportContentOffsetX and viewportContentOffsetY
+    int startRow = viewportContentOffsetY / cellSize;
+
+    int startCol = viewportContentOffsetX / cellSize;
+    int endCol = (viewportContentOffsetX + viewportWidth) / cellSize;
     if (endCol > GRID_WIDTH) {
         endCol = GRID_WIDTH;
     }
+
+    // Begin the scissor mode to restrict drawing to the viewport
+    BeginScissorMode(viewportX, viewportY, viewportWidth, viewportHeight);
 
     // Draw only the cells within the viewport, adjusted for content offset
     for (int i = startRow; i < endRow; i++) {
@@ -303,31 +296,22 @@ void DrawUIOnRight(int height, int width) {
     // Add the cell under cursor function back to the UI panel
     static char cellUnderCursorText[50] = "Cell: N/A";
 
-    // Ensure the grid exists and is initialized before accessing it
+    // Adjust the logic to ensure the entire viewport is recognized
     if (grid != NULL) {
-        // Check if the cursor is over the play area
         Vector2 mousePos = GetMousePosition();
-        if (mousePos.x >= viewportX && mousePos.x < viewportX + width &&
-            mousePos.y >= viewportY && mousePos.y < viewportY + height) {
 
-            // Calculate the cell under the mouse
-            int cellX = (int)((mousePos.x + viewportContentOffsetX) / cellSize);
-            int cellY = (int)((mousePos.y + viewportContentOffsetY) / cellSize);
+        // Calculate the cell under the mouse, considering viewport offsets
+        int cellX = (int)((mousePos.x - viewportX + viewportContentOffsetX) / cellSize);
+        int cellY = (int)((mousePos.y - viewportY + viewportContentOffsetY) / cellSize);
 
-            // Ensure the cell coordinates are clamped within the viewport bounds
-            if (cellX > viewportX && cellX < viewportX + width && cellY > viewportY && cellY < viewportY + height) {
-                snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: (%d, %d)", cellX, cellY);
-                snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: %d", grid[cellY][cellX].moisture);
-                const char* cellTypeNames[] = {"Air", "Soil", "Water", "Plant", "Rock", "Moss"};
-                snprintf(cellTypeText, sizeof(cellTypeText), "Type: %s", cellTypeNames[grid[cellY][cellX].type]);
-            } else {
-                // Reset to default values if the cell is out of bounds
-                snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: N/A");
-                snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
-                snprintf(cellTypeText, sizeof(cellTypeText), "Type: N/A");
-            }
+        // Ensure the cell coordinates are clamped within the grid bounds
+        if (cellX > 0 && cellX < GRID_WIDTH && cellY > 0 && cellY < GRID_HEIGHT) {
+            snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: (%d, %d)", cellX, cellY);
+            snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: %d", grid[cellY][cellX].moisture);
+            const char* cellTypeNames[] = {"Air", "Soil", "Water", "Plant", "Rock", "Moss"};
+            snprintf(cellTypeText, sizeof(cellTypeText), "Type: %s", cellTypeNames[grid[cellY][cellX].type]);
         } else {
-            // Reset to default values if the cursor is outside the play area
+            // Reset to default values if the cell is out of bounds
             snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: N/A");
             snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
             snprintf(cellTypeText, sizeof(cellTypeText), "Type: N/A");
