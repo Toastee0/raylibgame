@@ -166,6 +166,12 @@ void MoveCell(int x1, int y1, int x2, int y2) {
         return;  // Skip if out of bounds
     }
     
+    // Prevent swapping with border tiles
+    if ((x1 == 0 || x1 == GRID_WIDTH - 1 || y1 == 0 || y1 == GRID_HEIGHT - 1) ||
+        (x2 == 0 || x2 == GRID_WIDTH - 1 || y2 == 0 || y2 == GRID_HEIGHT - 1)) {
+        return; // Skip if either cell is a border tile
+    }
+    
     // Swap cells
     GridCell temp = grid[y1][x1];
     grid[y1][x1] = grid[y2][x2];
@@ -180,8 +186,13 @@ void MoveCell(int x1, int y1, int x2, int y2) {
 void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
     for(int y = centerY - radius; y <= centerY + radius; y++) {
         for(int x = centerX - radius; x <= centerX + radius; x++) {
+            // Skip border cells
+            if (x == 0 || x == GRID_WIDTH - 1 || y == 0 || y == GRID_HEIGHT - 1) {
+                continue;
+            }
+
             float distanceSquared = (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY);
-            
+
             if(distanceSquared <= radius * radius && x >= 0 && x < GRID_WIDTH && y >= 0 && y < GRID_HEIGHT) {
                 switch(cellType) {
                     case CELL_TYPE_SOIL:
