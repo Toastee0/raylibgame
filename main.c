@@ -18,6 +18,8 @@
 #include "src/simulation.h"
 #include "src/input.h"
 #include "src/rendering.h"
+#include "src/button_registry.h"
+#include "src/viewport.h"
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>
@@ -45,6 +47,12 @@ int gameWidth;           // Will be calculated based on grid dimensions
 int gameHeight;          // Will be calculated based on grid dimensions
 int minGameWidth = 800;  // Minimum game area width
 bool blackBackgroundDrawn = false;  // Flag to track initial drawing
+
+// Define viewport variables
+int viewportX = 0;
+int viewportY = 0;
+int viewportContentOffsetX = 0;
+int viewportContentOffsetY = 0;
 
 // Function to handle window resizing
 void HandleWindowResize(void) {
@@ -95,6 +103,20 @@ void HandleWindowResize(void) {
         blackBackgroundDrawn = false;
 
         TraceLog(LOG_INFO, "Window resized: Cell size adjusted to %d pixels", CELL_SIZE);
+
+        // Ensure the viewport covers the available area to the left of the UI panel
+        viewportX = 0;
+        viewportY = 0;
+        gameWidth = GetScreenWidth() - uiPanelWidth;
+        gameHeight = GetScreenHeight();
+
+        // Adjust viewport dimensions to fit the available area
+        if (gameWidth < minGameWidth) {
+            gameWidth = minGameWidth;
+        }
+
+        viewportContentOffsetX = 0;
+        viewportContentOffsetY = 0;
     }
 }
 
@@ -112,13 +134,19 @@ int main(void) {
     
     // Initialize grid
     InitGrid();
+
+    // Call HandleWindowResize once during initialization to set up initial button placement
+    HandleWindowResize();
+
+    // Ensure UI is drawn at least once to register buttons
+    DrawUIOnRight(gameHeight, uiPanelWidth);
     
     // Set initial game dimensions
     gameWidth = CELL_SIZE * GRID_WIDTH;
     gameHeight = CELL_SIZE * GRID_HEIGHT;
     
     SetTargetFPS(60);
-    
+    //main rendering loop
     while (!WindowShouldClose()) {
         // Check if window was resized
         if (IsWindowResized()) {
@@ -144,8 +172,15 @@ static void UpdateDrawFrame(void) {
         ClearBackground(BLACK); // Clear the background at the start of the frame
 
         if (simulationRunning && !simulationPaused) {
-            // Update the simulation state if running
-            UpdateGrid();
+            // Check if grid is initialized before updating
+            if (grid != NULL) {
+                // Update the simulation state if running
+                UpdateGrid();
+            } else {
+                // Initialize grid if it's not already initialized
+                InitGrid();
+                printf("Grid was initialized during simulation update\n");
+            }
         }
 
         DrawGameGrid(); // Render the simulation grid
@@ -186,10 +221,16 @@ void HandleStateMessages(void) {
 
 // Update state change flag when simulation state changes
 void SetSimulationState(bool running, bool paused) {
+    if (running && grid == NULL) {
+        // Initialize grid if trying to start simulation and grid isn't ready
+        InitGrid();
+        printf("Grid initialized during simulation start\n");
+    }
+    
     if (simulationRunning != running || simulationPaused != paused) {
         stateChanged = true;
         pauseMessageDrawn = false; // Reset pause message flag on state change
     }
-    simulationRunning = running; // Set simulationRunning to the provided value
-    simulationPaused = paused;   // Set simulationPaused to the provided value
+    simulationRunning = running;
+    simulationPaused = paused;
 }

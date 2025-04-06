@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include "updatecells.h"
 
 
 
@@ -70,11 +71,12 @@ void UpdateGrid(void) {
         }
     }
 
-    // Update all cell types in the right order
-    UpdateSoil();         // Soil falls
-    UpdateWater();        // Water flows
-    UpdateEvaporation();  // Water evaporates based on temperature
-    UpdateAir();          // Moist air rises, and clouds form in cool regions
+    // Update all cell types in the right order (obsolete, use new single function)
+    updateCells();
+    //UpdateSoil();         // Soil falls
+    //UpdateWater();        // Water flows
+    //UpdateEvaporation();  // Water evaporates based on temperature
+    //UpdateAir();          // Moist air rises, and clouds form in cool regions
 
     // Other update functions...
 }
@@ -91,7 +93,7 @@ void UpdateSoil(void) {
     bool processRightToLeft = GetRandomValue(0, 1);
 
     // Process soil from bottom to top, alternating left/right direction
-    for (int y = GRID_HEIGHT - 1; y >= 0; y--) {
+    for (int y = GRID_HEIGHT - 1; y > 0; y--) {
         // Alternate direction for each row
         processRightToLeft = !processRightToLeft;
 
@@ -99,12 +101,12 @@ void UpdateSoil(void) {
         if (processRightToLeft) {
             // Right to left
             startX = GRID_WIDTH - 1;
-            endX = -1;
+            endX = 0;
             stepX = -1;
         } else {
             // Left to right
             startX = 0;
-            endX = GRID_WIDTH;
+            endX = GRID_WIDTH - 1;
             stepX = 1;
         }
 
@@ -273,8 +275,8 @@ void MergeAirMoisture(int x, int y) {
         for (int dx = -1; dx <= 1; dx++) {
             // Skip center and out of bounds
             if ((dx == 0 && dy == 0) ||
-                y + dy < 0 || y + dy >= GRID_HEIGHT ||
-                x + dx < 0 || x + dx >= GRID_WIDTH)
+                y + dy < 0 || y + dy > GRID_HEIGHT ||
+                x + dx < 0 || x + dx > GRID_WIDTH)
                 continue;
 
             // If neighbor is air with more moisture, equalize
@@ -304,8 +306,8 @@ void UpdateEvaporation(void) {
                     for (int dy = -1; dy <= 1; dy++) {
                         for (int dx = -1; dx <= 1; dx++) {
                             if ((dx == 0 && dy == 0) ||
-                                y + dy < 0 || y + dy >= GRID_HEIGHT ||
-                                x + dx < 0 || x + dx >= GRID_WIDTH)
+                                y + dy < 0 || y + dy > GRID_HEIGHT ||
+                                x + dx < 0 || x + dx > GRID_WIDTH)
                                 continue;
 
                             if (grid[y + dy][x + dx].type == CELL_TYPE_AIR && grid[y + dy][x + dx].moisture < 95) {

@@ -10,7 +10,7 @@ void PlaceSoil(Vector2 position) {
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+    if(x < 0 || x > GRID_WIDTH - 1 || y < 0 || y > GRID_HEIGHT - 1) return;
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_SOIL);
@@ -23,7 +23,7 @@ void PlaceWater(Vector2 position) {
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+    if(x < 0 || x > GRID_WIDTH - 1 || y < 0 || y > GRID_HEIGHT - 1) return;
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_WATER);
@@ -47,7 +47,7 @@ void PlaceRock(Vector2 position) {
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+    if(x < 0 || x > GRID_WIDTH - 1 || y < 0 || y > GRID_HEIGHT - 1) return;
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_ROCK);
@@ -69,7 +69,7 @@ void PlacePlant(Vector2 position) {
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+    if(x < 0 || x > GRID_WIDTH - 1 || y < 0 || y > GRID_HEIGHT - 1) return;
     
     // Only allow plants to grow on soil
     if(grid[y][x].type != CELL_TYPE_SOIL && grid[y][x].type != CELL_TYPE_AIR) {
@@ -109,7 +109,7 @@ void PlaceMoss(Vector2 position) {
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+    if(x < 0 || x > GRID_WIDTH - 1 || y < 0 || y > GRID_HEIGHT - 1) return;
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_MOSS);
@@ -134,13 +134,13 @@ void PlaceMoss(Vector2 position) {
     grid[y][x].moisture = 70 + GetRandomValue(-5, 15);
 }
 
-// Place air at the given position
+// Place air at the given position 
 void PlaceAir(Vector2 position) {
     int x = (int)position.x;
     int y = (int)position.y;
     
     // Ensure position is within grid bounds
-    if(x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return;
+    if(x < 0 || x > GRID_WIDTH - 1 || y < 0 || y > GRID_HEIGHT - 1) return;
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_AIR);
@@ -161,8 +161,8 @@ void PlaceAir(Vector2 position) {
 // Move cell function - swaps position of two cells
 void MoveCell(int x1, int y1, int x2, int y2) {
     // Bounds checking to prevent memory corruption
-    if (x1 < 0 || x1 >= GRID_WIDTH || y1 < 0 || y1 >= GRID_HEIGHT ||
-        x2 < 0 || x2 >= GRID_WIDTH || y2 < 0 || y2 >= GRID_HEIGHT) {
+    if (x1 < 0 || x1 > GRID_WIDTH - 1 || y1 < 0 || y1 > GRID_HEIGHT - 1 ||
+        x2 < 0 || x2 > GRID_WIDTH - 1 || y2 < 0 || y2 > GRID_HEIGHT - 1) {
         return;  // Skip if out of bounds
     }
     
@@ -187,13 +187,13 @@ void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
     for(int y = centerY - radius; y <= centerY + radius; y++) {
         for(int x = centerX - radius; x <= centerX + radius; x++) {
             // Skip border cells
-            if (x == 0 || x == GRID_WIDTH - 1 || y == 0 || y == GRID_HEIGHT - 1) {
+            if (x <= 0 || x > GRID_WIDTH - 1 || y <= 0 || y > GRID_HEIGHT - 1) {
                 continue;
             }
 
             float distanceSquared = (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY);
 
-            if(distanceSquared <= radius * radius && x >= 0 && x < GRID_WIDTH && y >= 0 && y < GRID_HEIGHT) {
+            if(distanceSquared <= radius * radius && x > 0 && x < GRID_WIDTH && y > 0 && y < GRID_HEIGHT) {
                 switch(cellType) {
                     case CELL_TYPE_SOIL:
                         PlaceSoil((Vector2){x, y});

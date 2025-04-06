@@ -7,14 +7,13 @@ void InitializeCellDefaults(GridCell* cell, int type) {
     cell->objectID = 0;
     cell->position = (Vector2){0, 0};
     cell->origin = (Vector2){0, 0};
-    cell->is_falling = false;
+   
     
     // Type-specific defaults
     switch(type) {
         case CELL_TYPE_BORDER:
             cell->baseColor = GRAY;
-            cell->colorhigh = 0;
-            cell->colorlow = 0;
+     
             cell->volume = 10;
             cell->Energy = 0;
             cell->height = 0;
@@ -31,8 +30,7 @@ void InitializeCellDefaults(GridCell* cell, int type) {
             
         case CELL_TYPE_AIR:
             cell->baseColor = WHITE;
-            cell->colorhigh = 255;
-            cell->colorlow = 200;
+
             cell->volume = 1;
             cell->Energy = 0;
             cell->height = 0;
@@ -49,8 +47,7 @@ void InitializeCellDefaults(GridCell* cell, int type) {
             
         case CELL_TYPE_SOIL:
             cell->baseColor = (Color){127, 106, 79, 255};  // Brown
-            cell->colorhigh = 0;
-            cell->colorlow = 0;
+        
             cell->volume = 7;
             cell->Energy = 0;
             cell->height = 0;
@@ -67,8 +64,7 @@ void InitializeCellDefaults(GridCell* cell, int type) {
             
         case CELL_TYPE_WATER:
             cell->baseColor = BLUE;
-            cell->colorhigh = 0;
-            cell->colorlow = 0;
+        
             cell->volume = 10;
             cell->Energy = 0;
             cell->height = 0;
@@ -85,8 +81,7 @@ void InitializeCellDefaults(GridCell* cell, int type) {
             
         case CELL_TYPE_PLANT:
             cell->baseColor = GREEN;
-            cell->colorhigh = 200;
-            cell->colorlow = 100;
+         
             cell->volume = 5;
             cell->Energy = 5;
             cell->height = 0;
@@ -103,8 +98,7 @@ void InitializeCellDefaults(GridCell* cell, int type) {
 
         case CELL_TYPE_ROCK:
             cell->baseColor = DARKGRAY;
-            cell->colorhigh = 0;
-            cell->colorlow = 0;
+          
             cell->volume = 10;
             cell->Energy = 0;
             cell->height = 0;
@@ -121,8 +115,7 @@ void InitializeCellDefaults(GridCell* cell, int type) {
 
         case CELL_TYPE_MOSS:
             cell->baseColor = DARKGREEN;
-            cell->colorhigh = 100;
-            cell->colorlow = 50;
+        
             cell->volume = 3;
             cell->Energy = 3;
             cell->height = 0;

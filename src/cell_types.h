@@ -18,8 +18,6 @@ typedef struct {
     Vector2 position;
     Vector2 origin; //co ordinates of the first pixel of the object or plant, if a multi pixel object.
     Color baseColor; //basic color of the pixel
-    int colorhigh; // max variation of color for the pixel
-    int colorlow; // min variation of color for the pixel
     int volume; //1-10, how much of the density of the object is filled, 1 = 10% 10 = 100%, for allowing water to evaoprate into moist air, or be absorbed by soil.
     int Energy; //5 initial, reduced when replicating.
     int height; //height of the pixel, intially 0, this is an offset to allow limiting and guiding the growth of plant type pixels.

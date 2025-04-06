@@ -1,7 +1,8 @@
 #include "grid.h"
 #include <stdlib.h>
 #include <stdio.h>
-#include "src/cell_defaults.h"
+#include "cell_defaults.h"
+#include "cell_types.h"
 
 // Grid constants
 int CELL_SIZE = 8;
@@ -10,96 +11,72 @@ int GRID_HEIGHT = 1080 * 2 / 8; // Double the height
 
 // Grid data
 GridCell** grid = NULL;
+GridCell* gridData = NULL; // Keep track of the original allocation
 
 // Initialize the grid
 void InitGrid(void) {
+    // Allocate array of row pointers
     grid = (GridCell**)malloc(GRID_HEIGHT * sizeof(GridCell*));
     if (!grid) {
         printf("ERROR: Failed to allocate memory for grid rows\n");
         return;
     }
-    
-    for(int i = 0; i < GRID_HEIGHT; i++) {
-        grid[i] = (GridCell*)malloc(GRID_WIDTH * sizeof(GridCell));
-        if (!grid[i]) {
-            printf("ERROR: Failed to allocate memory for grid row %d\n", i);
-            // Clean up already allocated rows
-            for (int j = 0; j < i; j++) {
-                free(grid[j]);
-            }
-            free(grid);
-            grid = NULL;
-            return;
-        }
-        
-        for(int j = 0; j < GRID_WIDTH; j++) {
-            // Use the default initializer for consistent cell setup
+
+    // Allocate the actual grid data as a single contiguous block
+    gridData = (GridCell*)malloc(GRID_HEIGHT * GRID_WIDTH * sizeof(GridCell));
+    if (!gridData) {
+        printf("ERROR: Failed to allocate memory for grid data\n");
+        free(grid);
+        grid = NULL;
+        return;
+    }
+
+    // Print allocation sizes for debugging
+    printf("Allocated %zu bytes for grid pointers\n", GRID_HEIGHT * sizeof(GridCell*));
+    printf("Allocated %zu bytes for grid cells (%d x %d cells)\n", 
+           GRID_HEIGHT * GRID_WIDTH * sizeof(GridCell), GRID_WIDTH, GRID_HEIGHT);
+    printf("Size of GridCell struct: %zu bytes\n", sizeof(GridCell));
+
+    // Initialize each cell in the grid
+    for (int i = 0; i < GRID_HEIGHT; i++) {
+        grid[i] = &gridData[i * GRID_WIDTH];
+        for (int j = 0; j < GRID_WIDTH; j++) {
+            // Use default initializer first to ensure complete initialization
             InitializeCellDefaults(&grid[i][j], CELL_TYPE_AIR);
             
-            // Update position based on grid coordinates
+            // Set position coordinates
             grid[i][j].position = (Vector2){j * CELL_SIZE, i * CELL_SIZE};
             
-            // Make border cells immutable
-            if (i == 0 || i == GRID_HEIGHT-1 || j == 0 || j == GRID_WIDTH-1) {
+            // Set border cells as immutable
+            if (i == 0 || i == GRID_HEIGHT - 1 || j == 0 || j == GRID_WIDTH - 1) {
                 grid[i][j].type = CELL_TYPE_BORDER;
             }
         }
     }
-    
-    // After all cells are initialized, set up the temperature gradient
-    InitializeTemperatureGradient();
-    
-    printf("Grid initialized with temperature gradient\n");
-}
 
-// Add the function definition after InitGrid
-void InitializeTemperatureGradient(void) {
-    const float baseTemp = 18.0f;     // Bottom temperature in Celsius
-    const float topTemp = 5.0f;       // Top temperature in Celsius
-    const float tempRange = baseTemp - topTemp;
-    
-    for(int y = 0; y < GRID_HEIGHT; y++) {
-        // Calculate temperature based on y position (cooler at top)
-        float tempAtHeight = baseTemp - (tempRange * (float)y / GRID_HEIGHT);
-        
-        for(int x = 0; x < GRID_WIDTH; x++) {
-            grid[y][x].temperature = tempAtHeight;
-        }
-    }
-    
-    printf("Temperature gradient initialized (%.1f°C to %.1f°C)\n", baseTemp, topTemp);
+    printf("Grid initialized successfully\n");
 }
 
 // Clean up the grid when program ends
 void CleanupGrid(void) {
+    if (gridData) {
+        free(gridData);  // Free the actual grid data
+        gridData = NULL;
+    }
+    
     if (grid) {
-        for(int i = 0; i < GRID_HEIGHT; i++) {
-            if (grid[i]) {
-                free(grid[i]);
-            }
-        }
-        free(grid);
+        free(grid);      // Free the array of row pointers
         grid = NULL;
     }
 }
 
-// Calculate total moisture in the system
-int CalculateTotalMoisture(void) {
-    int totalMoisture = 0;
-    
-    for(int y = 0; y < GRID_HEIGHT; y++) {
-        for(int x = 0; x < GRID_WIDTH; x++) {
-            totalMoisture += grid[y][x].moisture;
-        }
-    }
-    
-    return totalMoisture;
-}
-
 // Check if a tile is a border or out of bounds
 bool IsBorderTile(int x, int y) {
-    return (x < 1 || x >= GRID_WIDTH - 1 || y < 1 || y >= GRID_HEIGHT - 1 || 
-            grid[y][x].type == CELL_TYPE_BORDER);
+    // First check bounds to avoid segfault
+    if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT)
+        return true;
+        
+    return (grid[y][x].type == CELL_TYPE_BORDER);
 }
 
 // Check if we can move to a tile
