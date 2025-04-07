@@ -60,16 +60,15 @@ void updateCells(void) {
         return;
     }
     
-    // Process from bottom to top for gravity-affected cells
-    // Use alternating scan directions each frame for more natural results
+    // Alternate scan direction each frame for more natural simulation
     static bool scanLeftToRight = true;
     scanLeftToRight = !scanLeftToRight;
     
-    // Reset all falling states at the start of a new frame - SAFELY
+    // Reset all falling states at the start of a new frame
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
-            // Skip the boundary check here - we just want to reset all cells
             grid[y][x].is_falling = false;
+            grid[y][x].updated_this_frame = false;
         }
     }
     
@@ -79,39 +78,64 @@ void updateCells(void) {
         // Top and bottom rows
         grid[0][x].type = CELL_TYPE_BORDER;
         grid[0][x].baseColor = DARKGRAY;
+        grid[0][x].updated_this_frame = true;
         
         grid[GRID_HEIGHT-1][x].type = CELL_TYPE_BORDER;
         grid[GRID_HEIGHT-1][x].baseColor = DARKGRAY;
+        grid[GRID_HEIGHT-1][x].updated_this_frame = true;
     }
     
     for (int y = 0; y < GRID_HEIGHT; y++) {
         // Left and right columns
         grid[y][0].type = CELL_TYPE_BORDER;
         grid[y][0].baseColor = DARKGRAY;
+        grid[y][0].updated_this_frame = true;
         
         grid[y][GRID_WIDTH-1].type = CELL_TYPE_BORDER;
         grid[y][GRID_WIDTH-1].baseColor = DARKGRAY;
+        grid[y][GRID_WIDTH-1].updated_this_frame = true;
     }
     
-    // Process cells from bottom to top for gravity effects
-    // Only process non-border cells (from 1 to GRID_HEIGHT-2 and 1 to GRID_WIDTH-2)
+    // Process falling cells (bottom to top)
     for (int y = GRID_HEIGHT - 2; y > 0; y--) {
+        // Alternate scan direction each frame
         if (scanLeftToRight) {
             for (int x = 1; x < GRID_WIDTH - 1; x++) {
-                updateCell(x, y);
+                if (!grid[y][x].updated_this_frame && 
+                    (grid[y][x].type == CELL_TYPE_SOIL || 
+                     grid[y][x].type == CELL_TYPE_WATER ||
+                     grid[y][x].type == CELL_TYPE_PLANT ||
+                     grid[y][x].type == CELL_TYPE_MOSS)) {
+                    updateCell(x, y);
+                }
             }
         } else {
             for (int x = GRID_WIDTH - 2; x > 0; x--) {
-                updateCell(x, y);
+                if (!grid[y][x].updated_this_frame && 
+                    (grid[y][x].type == CELL_TYPE_SOIL || 
+                     grid[y][x].type == CELL_TYPE_WATER ||
+                     grid[y][x].type == CELL_TYPE_PLANT ||
+                     grid[y][x].type == CELL_TYPE_MOSS)) {
+                    updateCell(x, y);
+                }
             }
         }
     }
     
-    // Second pass for air movement (top to bottom)
+    // Process rising cells (top to bottom)
     for (int y = 1; y < GRID_HEIGHT - 1; y++) {
-        for (int x = 1; x < GRID_WIDTH - 1; x++) {
-            if (grid[y][x].type == CELL_TYPE_AIR) {
-                updateAirCell(x, y);
+        // Alternate scan direction each frame here too
+        if (scanLeftToRight) {
+            for (int x = 1; x < GRID_WIDTH - 1; x++) {
+                if (!grid[y][x].updated_this_frame && grid[y][x].type == CELL_TYPE_AIR) {
+                    updateAirCell(x, y);
+                }
+            }
+        } else {
+            for (int x = GRID_WIDTH - 2; x > 0; x--) {
+                if (!grid[y][x].updated_this_frame && grid[y][x].type == CELL_TYPE_AIR) {
+                    updateAirCell(x, y);
+                }
             }
         }
     }
@@ -119,7 +143,7 @@ void updateCells(void) {
 
 // Route each cell to its appropriate update function
 void updateCell(int x, int y) {
-    if (IsBorderTile(x, y)) return;
+    if (IsBorderTile(x, y) || grid[y][x].updated_this_frame) return;
     
     switch (grid[y][x].type) {
         case CELL_TYPE_SOIL:
@@ -134,12 +158,18 @@ void updateCell(int x, int y) {
         case CELL_TYPE_MOSS:
             updateMossCell(x, y);
             break;
-        // Air is handled in a separate pass
+        case CELL_TYPE_AIR:
+            // Air is handled in a separate pass, but we can call it here if needed
+            break;
         case CELL_TYPE_ROCK:
+            // Rocks don't move or update
+            break;
         case CELL_TYPE_BORDER:
-            // These cell types don't update
+            // Border cells don't update
             break;
     }
+    
+    grid[y][x].updated_this_frame = true;
 }
 
 // Update soil cell physics and behavior
@@ -156,30 +186,55 @@ void updateSoilCell(int x, int y) {
         255
     };
     
-    // Try to move down first
+    // Try falling motion first - straight down is preferred
     if (moveDirs & DIR_DOWN) {
-        tryMoveInDirection(x, y, DIR_DOWN);
-        return;
+        if (tryMoveInDirection(x, y, DIR_DOWN)) {
+            return;
+        }
     }
     
-    // Try diagonal down movement if couldn't move straight down
-    if (moveDirs & DIR_DOWN_LEFT && moveDirs & DIR_DOWN_RIGHT) {
+    // Try diagonal falling
+    bool fell = false;
+    if ((moveDirs & DIR_DOWN_LEFT) && (moveDirs & DIR_DOWN_RIGHT)) {
         // Choose randomly between the two diagonals
         if (GetRandomValue(0, 1) == 0) {
-            tryMoveInDirection(x, y, DIR_DOWN_LEFT);
+            fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
         } else {
-            tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
+            fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
         }
-        return;
     } else if (moveDirs & DIR_DOWN_LEFT) {
-        tryMoveInDirection(x, y, DIR_DOWN_LEFT);
-        return;
+        fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
     } else if (moveDirs & DIR_DOWN_RIGHT) {
-        tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
-        return;
+        fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
     }
     
-    // Soil moisture diffusion will be implemented here
+    // If cell didn't fall, try to slide horizontally based on slope
+    if (!fell) {
+        bool isOnSlope = false;
+        bool slopeLeft = false;
+        
+        // Check if cell is on a slope
+        if ((grid[y+1][x-1].type == CELL_TYPE_AIR || grid[y+1][x-1].type == CELL_TYPE_WATER) && 
+            (grid[y+1][x].type != CELL_TYPE_AIR && grid[y+1][x].type != CELL_TYPE_WATER)) {
+            isOnSlope = true;
+            slopeLeft = true;
+        } else if ((grid[y+1][x+1].type == CELL_TYPE_AIR || grid[y+1][x+1].type == CELL_TYPE_WATER) && 
+                  (grid[y+1][x].type != CELL_TYPE_AIR && grid[y+1][x].type != CELL_TYPE_WATER)) {
+            isOnSlope = true;
+            slopeLeft = false;
+        }
+        
+        // Try to slide on slope
+        if (isOnSlope) {
+            if (slopeLeft && (moveDirs & DIR_LEFT)) {
+                tryMoveInDirection(x, y, DIR_LEFT);
+            } else if (!slopeLeft && (moveDirs & DIR_RIGHT)) {
+                tryMoveInDirection(x, y, DIR_RIGHT);
+            }
+        }
+    }
+    
+    // Soil moisture diffusion to be implemented
 }
 
 // Update water cell physics and behavior
@@ -187,7 +242,7 @@ void updateWaterCell(int x, int y) {
     // Get valid movement directions for water
     unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_WATER);
     
-    // Update water color based on moisture
+    // Update water color based on moisture level
     float moistureRatio = (float)grid[y][x].moisture / 100.0f;
     grid[y][x].baseColor = (Color){
         0 + (int)(200 * (1.0f - moistureRatio)),
@@ -196,48 +251,64 @@ void updateWaterCell(int x, int y) {
         255
     };
     
-    // Similar to soil, try to move down first
+    // Try falling motion first - straight down is preferred
     if (moveDirs & DIR_DOWN) {
-        tryMoveInDirection(x, y, DIR_DOWN);
-        return;
-    }
-    
-    // Try diagonal down movement
-    if (moveDirs & DIR_DOWN_LEFT && moveDirs & DIR_DOWN_RIGHT) {
-        if (GetRandomValue(0, 1) == 0) {
-            tryMoveInDirection(x, y, DIR_DOWN_LEFT);
-        } else {
-            tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
+        if (tryMoveInDirection(x, y, DIR_DOWN)) {
+            return;
         }
-        return;
-    } else if (moveDirs & DIR_DOWN_LEFT) {
-        tryMoveInDirection(x, y, DIR_DOWN_LEFT);
-        return;
-    } else if (moveDirs & DIR_DOWN_RIGHT) {
-        tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
-        return;
     }
     
-    // If water can't move down, try to spread horizontally
-    if (moveDirs & DIR_LEFT && moveDirs & DIR_RIGHT) {
+    // Try diagonal falling
+    bool fell = false;
+    if ((moveDirs & DIR_DOWN_LEFT) && (moveDirs & DIR_DOWN_RIGHT)) {
+        // Choose randomly between the two diagonals
         if (GetRandomValue(0, 1) == 0) {
-            tryMoveInDirection(x, y, DIR_LEFT);
+            fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
         } else {
+            fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
+        }
+    } else if (moveDirs & DIR_DOWN_LEFT) {
+        fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
+    } else if (moveDirs & DIR_DOWN_RIGHT) {
+        fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
+    }
+    
+    // If water didn't fall, try to spread horizontally
+    if (!fell) {
+        // Check both sides first
+        bool canMoveLeft = (moveDirs & DIR_LEFT);
+        bool canMoveRight = (moveDirs & DIR_RIGHT);
+        
+        // If both directions are available, choose randomly with a bias
+        // towards the direction with more space for the water to flow
+        if (canMoveLeft && canMoveRight) {
+            // Count available cells in each direction
+            int leftSpace = 0, rightSpace = 0;
+            for (int i = 1; i <= 5; i++) { // Look up to 5 cells in each direction
+                if (x-i >= 0 && grid[y][x-i].type == CELL_TYPE_AIR) leftSpace++;
+                if (x+i < GRID_WIDTH && grid[y][x+i].type == CELL_TYPE_AIR) rightSpace++;
+            }
+            
+            // Add some randomness but bias toward direction with more space
+            if (GetRandomValue(0, leftSpace + rightSpace) < leftSpace) {
+                tryMoveInDirection(x, y, DIR_LEFT);
+            } else {
+                tryMoveInDirection(x, y, DIR_RIGHT);
+            }
+        } else if (canMoveLeft) {
+            tryMoveInDirection(x, y, DIR_LEFT);
+        } else if (canMoveRight) {
             tryMoveInDirection(x, y, DIR_RIGHT);
         }
-    } else if (moveDirs & DIR_LEFT) {
-        tryMoveInDirection(x, y, DIR_LEFT);
-    } else if (moveDirs & DIR_RIGHT) {
-        tryMoveInDirection(x, y, DIR_RIGHT);
+        
+        // Water evaporation will be implemented here
     }
-    
-    // Water evaporation will be implemented here
 }
 
 // Update air cell physics (including moisture and clouds)
 void updateAirCell(int x, int y) {
-    // Air behavior is mostly about moisture movement and cloud formation
-    // This is just a framework - we'll implement the details later
+    // Air tends to rise
+    unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_AIR);
     
     // Update air color based on moisture
     if (grid[y][x].moisture > 75) {
@@ -247,35 +318,194 @@ void updateAirCell(int x, int y) {
         grid[y][x].baseColor = BLACK;  // Invisible air
     }
     
-    // Moisture diffusion between air cells will be implemented here
+    // Only move air cells with high moisture (rising vapor)
+    if (grid[y][x].moisture > 50) {
+        // Try rising straight up
+        if (moveDirs & DIR_UP) {
+            if (tryMoveInDirection(x, y, DIR_UP)) {
+                return;
+            }
+        }
+        
+        // Try diagonal rising
+        if ((moveDirs & DIR_UP_LEFT) && (moveDirs & DIR_UP_RIGHT)) {
+            // Choose randomly between the two diagonals
+            if (GetRandomValue(0, 1) == 0) {
+                tryMoveInDirection(x, y, DIR_UP_LEFT);
+            } else {
+                tryMoveInDirection(x, y, DIR_UP_RIGHT);
+            }
+        } else if (moveDirs & DIR_UP_LEFT) {
+            tryMoveInDirection(x, y, DIR_UP_LEFT);
+        } else if (moveDirs & DIR_UP_RIGHT) {
+            tryMoveInDirection(x, y, DIR_UP_RIGHT);
+        }
+        
+        // Horizontal movement of air (wind) will be implemented here
+    }
     
-    // Cloud formation logic will be implemented here
+    // Moisture diffusion between air cells
+    for (int i = 0; i < 8; i++) {
+        int nx = x + DIR_X[i];
+        int ny = y + DIR_Y[i];
+        
+        if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1) continue;
+        
+        if (grid[ny][nx].type == CELL_TYPE_AIR && !grid[ny][nx].updated_this_frame) {
+            int moistureDiff = grid[y][x].moisture - grid[ny][nx].moisture;
+            if (moistureDiff > 1) {
+                int transfer = moistureDiff / 8;  // Distribute gradually
+                if (transfer > 0) {
+                    tryMoistureDiffusion(x, y, 1 << i, transfer);
+                }
+            }
+        }
+    }
+    
+    // Cloud formation and precipitation will be implemented here
+    if (grid[y][x].moisture > 95) {
+        // Chance to form water droplet (precipitation)
+        if (GetRandomValue(0, 100) < 5) {
+            grid[y][x].type = CELL_TYPE_WATER;
+            grid[y][x].moisture = 100;
+            grid[y][x].baseColor = (Color){20, 120, 255, 255};
+        }
+    }
 }
 
 // Update plant cell growth and interactions
 void updatePlantCell(int x, int y) {
-    // Plants mostly interact with moisture and occasionally grow or reproduce
-    // This is just a framework - we'll implement the details later
+    // Plants can fall if not supported
+    unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_PLANT);
     
     // Aging
     grid[y][x].age++;
     
-    // Moisture absorption from nearby cells will be implemented here
+    // Plants can fall
+    if (moveDirs & DIR_DOWN) {
+        tryMoveInDirection(x, y, DIR_DOWN);
+        return;
+    }
     
-    // Growth and reproduction will be implemented here
+    // Moisture absorption from nearby cells
+    for (int i = 0; i < 8; i++) {
+        int nx = x + DIR_X[i];
+        int ny = y + DIR_Y[i];
+        
+        if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1) continue;
+        
+        if (grid[ny][nx].type == CELL_TYPE_WATER || grid[ny][nx].type == CELL_TYPE_SOIL) {
+            if (grid[ny][nx].moisture > 20 && grid[y][x].moisture < 80) {
+                int transfer = GetRandomValue(1, 5);
+                tryMoistureDiffusion(nx, ny, 1 << ((i + 4) % 8), transfer); // Opposite direction
+            }
+        }
+    }
+    
+    // Plant growth chance based on age and moisture
+    if (grid[y][x].age > 100 && grid[y][x].moisture > 40) {
+        // Check for empty space to grow
+        unsigned char emptyDirs = getEmptyDirections(x, y);
+        if (emptyDirs) {
+            // Select a random direction with preference for upward growth
+            int dirToGrow = -1;
+            int totalWeight = 0;
+            int weights[8] = {1, 3, 1, 1, 1, 1, 1, 1}; // Higher weight for upward
+            
+            for (int i = 0; i < 8; i++) {
+                if (emptyDirs & (1 << i)) {
+                    totalWeight += weights[i];
+                }
+            }
+            
+            int choice = GetRandomValue(1, totalWeight);
+            int currentWeight = 0;
+            
+            for (int i = 0; i < 8; i++) {
+                if (emptyDirs & (1 << i)) {
+                    currentWeight += weights[i];
+                    if (choice <= currentWeight) {
+                        dirToGrow = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (dirToGrow >= 0) {
+                int nx = x + DIR_X[dirToGrow];
+                int ny = y + DIR_Y[dirToGrow];
+                
+                if (nx >= 1 && nx < GRID_WIDTH-1 && ny >= 1 && ny < GRID_HEIGHT-1 && 
+                    grid[ny][nx].type == CELL_TYPE_AIR) {
+                    grid[ny][nx].type = CELL_TYPE_PLANT;
+                    grid[ny][nx].baseColor = (Color){20, 200, 20, 255};
+                    grid[ny][nx].age = 0;
+                    grid[ny][nx].moisture = 20;
+                    grid[ny][nx].updated_this_frame = true;
+                    
+                    // Consume moisture for growth
+                    grid[y][x].moisture -= 10;
+                }
+            }
+        }
+    }
 }
 
 // Update moss cell behavior
 void updateMossCell(int x, int y) {
-    // Similar to plants but with different growth patterns
-    // This is just a framework - we'll implement the details later
+    // Moss can fall if not supported
+    unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_MOSS);
     
     // Aging
     grid[y][x].age++;
     
-    // Moisture absorption will be implemented here
+    // Moss can fall
+    if (moveDirs & DIR_DOWN) {
+        tryMoveInDirection(x, y, DIR_DOWN);
+        return;
+    }
     
-    // Growth and spread will be implemented here
+    // Moss spreads differently than plants - prefers surfaces
+    if (grid[y][x].age > 150 && grid[y][x].moisture > 30) {
+        // Try to find adjacent surfaces to spread onto
+        for (int i = 0; i < 8; i++) {
+            int nx = x + DIR_X[i];
+            int ny = y + DIR_Y[i];
+            
+            if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1) continue;
+            
+            // Moss spreads to rock or soil
+            if ((grid[ny][nx].type == CELL_TYPE_ROCK || grid[ny][nx].type == CELL_TYPE_SOIL) && 
+                !grid[ny][nx].updated_this_frame) {
+                // Check if there's air adjacent to the target cell (moss needs some air)
+                bool hasAirAdjacent = false;
+                for (int j = 0; j < 8; j++) {
+                    int nnx = nx + DIR_X[j];
+                    int nny = ny + DIR_Y[j];
+                    
+                    if (nnx < 1 || nnx >= GRID_WIDTH-1 || nny < 1 || nny >= GRID_HEIGHT-1) continue;
+                    
+                    if (grid[nny][nnx].type == CELL_TYPE_AIR) {
+                        hasAirAdjacent = true;
+                        break;
+                    }
+                }
+                
+                // Spread if conditions are good
+                if (hasAirAdjacent && GetRandomValue(0, 100) < 5) {
+                    grid[ny][nx].type = CELL_TYPE_MOSS;
+                    grid[ny][nx].baseColor = (Color){20, 180, 20, 255};
+                    grid[ny][nx].age = 0;
+                    grid[ny][nx].moisture = 20;
+                    grid[ny][nx].updated_this_frame = true;
+                    
+                    // Consume moisture for growth
+                    grid[y][x].moisture -= 5;
+                    break;  // Only spread to one cell per update
+                }
+            }
+        }
+    }
 }
 
 // Get valid movement directions based on cell type and surroundings
@@ -288,24 +518,45 @@ unsigned char getValidDirections(int x, int y, int cellType) {
         int ny = y + DIR_Y[i];
         
         // Skip if out of bounds
-        if (nx < 0 || nx > GRID_WIDTH - 1 || ny < 0 || ny > GRID_HEIGHT - 1) {
+        if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1) {
+            continue;
+        }
+        
+        // Skip if cell has already been updated this frame
+        if (grid[ny][nx].updated_this_frame) {
             continue;
         }
         
         // Different rules for different cell types
         switch (cellType) {
             case CELL_TYPE_SOIL:
-            case CELL_TYPE_WATER:
-                // These can move into air or water (with rules)
+                // Soil can move into air or water
                 if (grid[ny][nx].type == CELL_TYPE_AIR || 
                     grid[ny][nx].type == CELL_TYPE_WATER) {
                     dirs |= (1 << i);
                 }
                 break;
                 
+            case CELL_TYPE_WATER:
+                // Water can move into air or displace other water
+                if (grid[ny][nx].type == CELL_TYPE_AIR ||
+                    (grid[ny][nx].type == CELL_TYPE_WATER && 
+                     grid[ny][nx].moisture < grid[y][x].moisture)) {
+                    dirs |= (1 << i);
+                }
+                break;
+                
             case CELL_TYPE_AIR:
-                // Air movement rules are more complex
-                // Will be implemented with moisture considerations
+                // Air with high moisture can rise through other air
+                if (grid[ny][nx].type == CELL_TYPE_AIR &&
+                    grid[y][x].moisture > grid[ny][nx].moisture + 10) {
+                    dirs |= (1 << i);
+                }
+                break;
+                
+            case CELL_TYPE_PLANT:
+            case CELL_TYPE_MOSS:
+                // Plants and moss can fall into air
                 if (grid[ny][nx].type == CELL_TYPE_AIR) {
                     dirs |= (1 << i);
                 }
@@ -329,33 +580,11 @@ unsigned char getEmptyDirections(int x, int y) {
         int ny = y + DIR_Y[i];
         
         // Skip if out of bounds
-        if (nx < 0 || nx > GRID_WIDTH - 1 || ny < 0 || ny > GRID_HEIGHT - 1) {
+        if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1) {
             continue;
         }
         
-        if (grid[ny][nx].type == CELL_TYPE_AIR) {
-            dirs |= (1 << i);
-        }
-    }
-    
-    return dirs;
-}
-
-// Get directions where moisture exceeds threshold
-unsigned char getMoistureDirections(int x, int y, int threshold) {
-    unsigned char dirs = 0;
-    
-    // Check each direction
-    for (int i = 0; i < 8; i++) {
-        int nx = x + DIR_X[i];
-        int ny = y + DIR_Y[i];
-        
-        // Skip if out of bounds
-        if (nx < 0 || nx > GRID_WIDTH - 1 || ny < 0 || ny > GRID_HEIGHT - 1) {
-            continue;
-        }
-        
-        if (grid[ny][nx].moisture > threshold) {
+        if (grid[ny][nx].type == CELL_TYPE_AIR && !grid[ny][nx].updated_this_frame) {
             dirs |= (1 << i);
         }
     }
@@ -377,14 +606,46 @@ bool tryMoveInDirection(int x, int y, unsigned char direction) {
     int nx = x + DIR_X[dirIndex];
     int ny = y + DIR_Y[dirIndex];
     
-    // Skip if the target is out of bounds
-    if (nx < 0 || nx > GRID_WIDTH - 1 || ny < 0 || ny > GRID_HEIGHT - 1) {
+    // Skip if the target is out of bounds or already updated
+    if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1 || grid[ny][nx].updated_this_frame) {
         return false;
     }
     
-    // Perform the move
-    MoveCell(x, y, nx, ny);
+    // Check if target cell can be modified based on type
+    if (grid[ny][nx].type == CELL_TYPE_BORDER || grid[ny][nx].type == CELL_TYPE_ROCK) {
+        return false;
+    }
+    
+    // Special case for water-water interaction
+    if (grid[y][x].type == CELL_TYPE_WATER && grid[ny][nx].type == CELL_TYPE_WATER) {
+        // Combine water if possible
+        int totalMoisture = grid[y][x].moisture + grid[ny][nx].moisture;
+        if (totalMoisture <= 100) {
+            // Merge water cells
+            grid[ny][nx].moisture = totalMoisture;
+            grid[y][x].type = CELL_TYPE_AIR;
+            grid[y][x].moisture = 10; // Leave some moisture in the air
+            grid[y][x].baseColor = BLACK;
+            grid[y][x].updated_this_frame = true;
+            grid[ny][nx].updated_this_frame = true;
+            return true;
+        } else if (grid[y][x].moisture > grid[ny][nx].moisture + 10) {
+            // Partial exchange of water
+            int transfer = (grid[y][x].moisture - grid[ny][nx].moisture) / 2;
+            grid[ny][nx].moisture += transfer;
+            grid[y][x].moisture -= transfer;
+            grid[y][x].updated_this_frame = true;
+            grid[ny][nx].updated_this_frame = true;
+            return true;
+        }
+        return false;
+    }
+    
+    // Handle generic cell movement
+    SwapCells(x, y, nx, ny);
     grid[ny][nx].is_falling = true;
+    grid[y][x].updated_this_frame = true;
+    grid[ny][nx].updated_this_frame = true;
     
     return true;
 }

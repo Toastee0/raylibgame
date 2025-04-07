@@ -1,25 +1,27 @@
 #ifndef GRID_H
 #define GRID_H
 
+#include <stdbool.h>
 #include "cell_types.h"
 
-// Grid constants
-extern  int CELL_SIZE;
-extern  int GRID_WIDTH;
-extern  int GRID_HEIGHT;
+// Define grid dimensions and cell size (accessible globally)
+extern int GRID_WIDTH;
+extern int GRID_HEIGHT;
+extern int CELL_SIZE;
 
-// Grid data
+// Grid structure
 extern GridCell** grid;
 
-// Grid initialization and utility functions
+// Initialize the grid
 void InitGrid(void);
-void CleanupGrid(void);
-int CalculateTotalMoisture(void);
-int ClampMoisture(int value);
-bool IsBorderTile(int x, int y);
-bool CanMoveTo(int x, int y);
 
-// Initialize temperature gradient for all cells
-void InitializeTemperatureGradient(void);
+// Clean up grid memory when program ends
+void CleanupGrid(void);
+
+// Check if a tile is a border or out of bounds
+bool IsBorderTile(int x, int y);
+
+// Check if we can move to a tile
+bool CanMoveTo(int x, int y);
 
 #endif // GRID_H

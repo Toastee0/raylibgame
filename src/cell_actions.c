@@ -3,6 +3,86 @@
 #include "cell_types.h"
 #include "cell_defaults.h"  // Add this include
 #include <stdio.h>
+#include <stdbool.h>
+
+// Move cell contents from one position to another
+void MoveCell(int fromX, int fromY, int toX, int toY) {
+    // Check bounds
+    if (fromX < 0 || fromX >= GRID_WIDTH || fromY < 0 || fromY >= GRID_HEIGHT ||
+        toX < 0 || toX >= GRID_WIDTH || toY < 0 || toY >= GRID_HEIGHT) {
+        return;
+    }
+    
+    // Store destination cell properties before overwriting
+    int destType = grid[toY][toX].type;
+    int destMoisture = grid[toY][toX].moisture;
+    int destTemp = grid[toY][toX].temperature;
+    int destAge = grid[toY][toX].age;
+    Color destColor = grid[toY][toX].baseColor;
+    int destEnergy = grid[toY][toX].Energy;
+    int destObjectID = grid[toY][toX].objectID;
+    
+    // Copy properties from source to destination
+    grid[toY][toX].type = grid[fromY][fromX].type;
+    grid[toY][toX].moisture = grid[fromY][fromX].moisture;
+    grid[toY][toX].temperature = grid[fromY][fromX].temperature;
+    grid[toY][toX].age = grid[fromY][fromX].age;
+    grid[toY][toX].baseColor = grid[fromY][fromX].baseColor;
+    grid[toY][toX].Energy = grid[fromY][fromX].Energy;
+    grid[toY][toX].objectID = grid[fromY][fromX].objectID;
+    
+    // Source becomes the destination's previous type (not always air)
+    grid[fromY][fromX].type = destType;
+    grid[fromY][fromX].moisture = destMoisture;
+    grid[fromY][fromX].temperature = destTemp;
+    grid[fromY][fromX].age = destAge;
+    grid[fromY][fromX].baseColor = destColor;
+    grid[fromY][fromX].Energy = destEnergy;
+    grid[fromY][fromX].objectID = destObjectID;
+}
+
+// Swap the contents of two cells
+void SwapCells(int x1, int y1, int x2, int y2) {
+    // Check bounds
+    if (x1 < 0 || x1 >= GRID_WIDTH || y1 < 0 || y1 >= GRID_HEIGHT ||
+        x2 < 0 || x2 >= GRID_WIDTH || y2 < 0 || y2 >= GRID_HEIGHT) {
+        return;
+    }
+    
+    // Temporarily store the properties of the first cell
+    GridCell temp;
+    temp.type = grid[y1][x1].type;
+    temp.moisture = grid[y1][x1].moisture;
+    temp.temperature = grid[y1][x1].temperature;
+    temp.age = grid[y1][x1].age;
+    temp.baseColor = grid[y1][x1].baseColor;
+    temp.Energy = grid[y1][x1].Energy;
+    temp.is_falling = grid[y1][x1].is_falling;
+    temp.updated_this_frame = grid[y1][x1].updated_this_frame;
+    temp.objectID = grid[y1][x1].objectID;
+    
+    // Copy properties from second cell to first cell
+    grid[y1][x1].type = grid[y2][x2].type;
+    grid[y1][x1].moisture = grid[y2][x2].moisture;
+    grid[y1][x1].temperature = grid[y2][x2].temperature;
+    grid[y1][x1].age = grid[y2][x2].age;
+    grid[y1][x1].baseColor = grid[y2][x2].baseColor;
+    grid[y1][x1].Energy = grid[y2][x2].Energy;
+    grid[y1][x1].is_falling = grid[y2][x2].is_falling;
+    grid[y1][x1].updated_this_frame = grid[y2][x2].updated_this_frame;
+    grid[y1][x1].objectID = grid[y2][x2].objectID;
+    
+    // Copy properties from temporary storage to second cell
+    grid[y2][x2].type = temp.type;
+    grid[y2][x2].moisture = temp.moisture;
+    grid[y2][x2].temperature = temp.temperature;
+    grid[y2][x2].age = temp.age;
+    grid[y2][x2].baseColor = temp.baseColor;
+    grid[y2][x2].Energy = temp.Energy;
+    grid[y2][x2].is_falling = temp.is_falling;
+    grid[y2][x2].updated_this_frame = temp.updated_this_frame;
+    grid[y2][x2].objectID = temp.objectID;
+}
 
 // Place soil at the given position
 void PlaceSoil(Vector2 position) {
@@ -156,30 +236,6 @@ void PlaceAir(Vector2 position) {
     } else {
         grid[y][x].baseColor = BLACK;  // Invisible air
     }
-}
-
-// Move cell function - swaps position of two cells
-void MoveCell(int x1, int y1, int x2, int y2) {
-    // Bounds checking to prevent memory corruption
-    if (x1 < 0 || x1 > GRID_WIDTH - 1 || y1 < 0 || y1 > GRID_HEIGHT - 1 ||
-        x2 < 0 || x2 > GRID_WIDTH - 1 || y2 < 0 || y2 > GRID_HEIGHT - 1) {
-        return;  // Skip if out of bounds
-    }
-    
-    // Prevent swapping with border tiles
-    if ((x1 == 0 || x1 == GRID_WIDTH - 1 || y1 == 0 || y1 == GRID_HEIGHT - 1) ||
-        (x2 == 0 || x2 == GRID_WIDTH - 1 || y2 == 0 || y2 == GRID_HEIGHT - 1)) {
-        return; // Skip if either cell is a border tile
-    }
-    
-    // Swap cells
-    GridCell temp = grid[y1][x1];
-    grid[y1][x1] = grid[y2][x2];
-    grid[y2][x2] = temp;
-    
-    // Update position properties to match new grid locations
-    grid[y1][x1].position = (Vector2){x1 * CELL_SIZE, y1 * CELL_SIZE};
-    grid[y2][x2].position = (Vector2){x2 * CELL_SIZE, y2 * CELL_SIZE};
 }
 
 // Place cells in a circular pattern

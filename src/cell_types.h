@@ -29,7 +29,8 @@ typedef struct {
     int temperature; //temperature of the object.
     int freezingpoint; //freezing point of the object.
     int boilingpoint; //boiling point of the object.
-    int temperaturepreferanceoffset; 
+    int temperaturepreferanceoffset;
+    bool updated_this_frame; // Add this flag to track updates
     bool is_falling; // New field to explicitly track falling state
 } GridCell;
 
