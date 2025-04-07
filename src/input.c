@@ -16,10 +16,8 @@ extern bool simulationPaused;
 extern int gameWidth;
 extern int uiPanelWidth;
 
-// Include viewportX and cellSize as external variables
-extern int viewportX;
-extern int viewportY;
-extern int cellSize;
+// Access to the camera for coordinate conversion
+extern Camera2D camera;
 
 // Track if mouse was initially pressed in UI area
 static bool mouseStartedInUI = false;
@@ -36,53 +34,32 @@ void HandleInput(void) {
         }
     }
     
-    // Handle brush size changes with mouse wheel
+    // Handle brush size changes with mouse wheel when Shift is held
     float wheelMove = GetMouseWheelMove();
-    if(wheelMove != 0) {
+    if(IsKeyDown(KEY_LEFT_SHIFT) && wheelMove != 0) {
         brushRadius += (int)wheelMove;
         // Clamp brush radius between 1 and 32
         brushRadius = (brushRadius < 1) ? 1 : ((brushRadius > 32) ? 32 : brushRadius);
     }
     
-    // Handle viewport panning with arrow keys
-    int panSpeed = 10; // Speed of panning in pixels
-
-    // Update viewport panning logic to use separate content offset
-    if (IsKeyDown(KEY_RIGHT)) {
-        viewportContentOffsetX += panSpeed;
-        if (viewportContentOffsetX > GRID_WIDTH * cellSize - gameWidth) {
-            viewportContentOffsetX = GRID_WIDTH * cellSize - gameWidth; // Prevent scrolling outside the gamefield
-        }
-    }
-    if (IsKeyDown(KEY_LEFT)) {
-        viewportContentOffsetX -= panSpeed;
-        if (viewportContentOffsetX < 0) {
-            viewportContentOffsetX = 0; // Prevent scrolling outside the gamefield
-        }
-    }
-
-    // Adjust the calculation for the viewport height to include all visible cells
-    int viewportHeight = GetRenderHeight() - 80; // Subtract 80 pixels for UI
-    int totalVisibleCells = viewportHeight / cellSize;
-
-
-    // Lock vertical scrolling
-    viewportContentOffsetY = 0;
-    
+    // Get mouse position
     Vector2 mousePos = GetMousePosition();
 
-    // Correct the calculation for determining if the cursor is in the game area
-    bool isInGameArea = mousePos.x > viewportX && mousePos.x < viewportX + gameWidth &&
-                        mousePos.y > viewportY && mousePos.y < viewportY + viewportHeight;
+    // Calculate UI position
+    int uiStartX = GetScreenWidth() - uiPanelWidth;
 
-    // Correct the calculation for determining if the cursor is over the UI panel
-    int uiStartX = GetScreenWidth() - uiPanelWidth; // Correctly calculate the UI panel's starting X position
+    // Determine if the cursor is in the game area or UI area
+    bool isInGameArea = mousePos.x < uiStartX;
 
-    // Check if the cursor is over the UI panel
-    if (mousePos.x > uiStartX && mousePos.x < GetScreenWidth()) {
-        mouseStartedInUI = true;
-    } else {
-        mouseStartedInUI = false;
+    // Check if mouse started in UI panel
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) || 
+        IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) || 
+        IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
+        if (mousePos.x > uiStartX && mousePos.x < GetScreenWidth()) {
+            mouseStartedInUI = true;
+        } else {
+            mouseStartedInUI = false;
+        }
     }
     
     // Handle UI interaction
@@ -104,19 +81,23 @@ void HandleInput(void) {
     if (isInGameArea) {
         // Only allow drawing if mouse didn't start in UI area
         if (!mouseStartedInUI) {
-            // Handle cell placement
-            // Adjust mouse position for scrolling offset
-            int gridX = (int)((mousePos.x - viewportX + viewportContentOffsetX) / cellSize);
-            int gridY = (int)((mousePos.y - viewportY + viewportContentOffsetY) / cellSize);
+            // Convert screen position to world position using the camera
+            Vector2 worldPos = GetScreenToWorld2D(mousePos, camera);
+            
+            // Calculate grid cell from world position
+            int gridX = (int)(worldPos.x / CELL_SIZE);
+            int gridY = (int)(worldPos.y / CELL_SIZE);
 
-            // Ensure the grid coordinates are clamped within the viewport bounds
-            if (gridX > 0 && gridX < (viewportX + gameWidth) / cellSize &&
-                gridY > 0 && gridY < (viewportY + viewportHeight) / cellSize) {
+            // Ensure the grid coordinates are within bounds
+            if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
                 // Handle cell placement logic here
                 if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
                     PlaceCircularPattern(gridX, gridY, currentSelectedType, brushRadius);
                 } else if (IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) {
                     PlaceCircularPattern(gridX, gridY, CELL_TYPE_AIR, brushRadius);
+                } else if (IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
+                    // Use middle button for water placement
+                    PlaceCircularPattern(gridX, gridY, CELL_TYPE_WATER, brushRadius);
                 }
             }
         }

@@ -28,11 +28,16 @@
 //----------------------------------------------------------------------------------
 // Local Variables Definition (local to this module)
 //----------------------------------------------------------------------------------
-Camera camera = { 0 };
+// External declaration from rendering.c
+extern Camera2D camera;
+extern bool cameraInitialized;
+extern Vector2 cameraTarget;
+
 int brushRadius = 8;  // Default brush radius (in grid cells)
 float lastSeedTime = 0;
 const float SEED_DELAY = 0.5f;  // Half second delay between seeds
 int currentSelectedType = CELL_TYPE_SOIL;  // Default to soil
+
 bool simulationRunning = false;  // Flag to control simulation state
 bool simulationPaused = true;    // Start with simulation paused
 bool initialStateMessageShown = false; // Flag to track if the initial state message has been shown
@@ -48,13 +53,7 @@ int gameHeight;          // Will be calculated based on grid dimensions
 int minGameWidth = 800;  // Minimum game area width
 bool blackBackgroundDrawn = false;  // Flag to track initial drawing
 
-// Define viewport variables
-int viewportX = 0;
-int viewportY = 0;
-int viewportContentOffsetX = 0;
-int viewportContentOffsetY = 0;
-
-// Function to handle window resizing
+// Function to handle window resizing, and update the grid size to match the window size. also used when first creating the window to ensure the UI is drawn correctly.
 void HandleWindowResize(void) {
     static int lastWidth = 0;
     static int lastHeight = 0;
@@ -104,19 +103,30 @@ void HandleWindowResize(void) {
 
         TraceLog(LOG_INFO, "Window resized: Cell size adjusted to %d pixels", CELL_SIZE);
 
-        // Ensure the viewport covers the available area to the left of the UI panel
-        viewportX = 0;
-        viewportY = 0;
-        gameWidth = GetScreenWidth() - uiPanelWidth;
-        gameHeight = GetScreenHeight();
+        // Calculate the viewport width (game area minus UI)
+        int viewportWidth = actualGameWidth;
+        int viewportHeight = newHeight;
+        
+        // Calculate minimum zoom to fill the viewport
+        float minZoomX = (float)viewportWidth / (GRID_WIDTH * CELL_SIZE);
+        float minZoomY = (float)viewportHeight / (GRID_HEIGHT * CELL_SIZE);
+        float minZoom = (minZoomX < minZoomY) ? minZoomX : minZoomY;
+        
+        // Set camera position to show top-left corner of grid in top-left of viewport
+        camera.zoom = minZoom;
+        camera.target.x = (viewportWidth / (2 * camera.zoom));
+        camera.target.y = (viewportHeight / (2 * camera.zoom));
+        camera.offset = (Vector2){(float)viewportWidth / 2.0f, (float)viewportHeight / 2.0f};
+        camera.rotation = 0.0f;
+        
+        // Update camera target for smooth movement
+        cameraTarget = camera.target;
+        
+        // Set camera as initialized
+        cameraInitialized = true;
 
-        // Adjust viewport dimensions to fit the available area
-        if (gameWidth < minGameWidth) {
-            gameWidth = minGameWidth;
-        }
-
-        viewportContentOffsetX = 0;
-        viewportContentOffsetY = 0;
+        TraceLog(LOG_INFO, "Camera reset on window resize - Target: (%f, %f), Offset: (%f, %f), Zoom: %f",
+                 camera.target.x, camera.target.y, camera.offset.x, camera.offset.y, camera.zoom);
     }
 }
 
@@ -137,7 +147,7 @@ int main(void) {
 
     // Call HandleWindowResize once during initialization to set up initial button placement
     HandleWindowResize();
-
+    
     // Ensure UI is drawn at least once to register buttons
     DrawUIOnRight(gameHeight, uiPanelWidth);
     

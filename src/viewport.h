@@ -1,10 +1,9 @@
 #ifndef VIEWPORT_H
 #define VIEWPORT_H
 
-// Declare viewport variables as extern
-extern int viewportX;
-extern int viewportY;
-extern int viewportContentOffsetX;
-extern int viewportContentOffsetY;
+// Camera for grid navigation
+extern Camera2D camera;
+extern bool cameraInitialized;
+extern Vector2 cameraTarget;
 
 #endif // VIEWPORT_H
