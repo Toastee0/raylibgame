@@ -390,6 +390,7 @@ void DrawUIOnRight(int height, int width) {
     static char cellMoistureText[50] = "Moisture: N/A";
     static char cellTypeText[50] = "Type: N/A";
     static char cellUnderCursorText[50] = "Cell: N/A";
+    static char cellFallingText[50] = "Falling: N/A";  // Add new text field for falling state
 
     // Show cell information under cursor using camera coordinates
     if (grid != NULL) {
@@ -406,6 +407,7 @@ void DrawUIOnRight(int height, int width) {
         if (cellX >= 0 && cellX < GRID_WIDTH && cellY >= 0 && cellY < GRID_HEIGHT) {
             snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: (%d, %d)", cellX, cellY);
             snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: %d", grid[cellY][cellX].moisture);
+            snprintf(cellFallingText, sizeof(cellFallingText), "Falling: %s", grid[cellY][cellX].is_falling ? "Yes" : "No");
             
             int cellType = grid[cellY][cellX].type;
             if (cellType == CELL_TYPE_BORDER) {
@@ -420,19 +422,22 @@ void DrawUIOnRight(int height, int width) {
             // Reset to default values if the cell is out of bounds
             snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: (%d, %d)", cellX, cellY);
             snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
+            snprintf(cellFallingText, sizeof(cellFallingText), "Falling: N/A");
             snprintf(cellTypeText, sizeof(cellTypeText), "Type: Out of bounds");
         }
     } else {
         // Reset to default values if the grid is not initialized
         snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: N/A");
         snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: N/A");
+        snprintf(cellFallingText, sizeof(cellFallingText), "Falling: N/A");
         snprintf(cellTypeText, sizeof(cellTypeText), "Type: N/A");
     }
     
     // Display cell information
     DrawText(cellUnderCursorText, startX, simControlsY + 155, 18, WHITE);
     DrawText(cellMoistureText, startX, simControlsY + 175, 18, WHITE);
-    DrawText(cellTypeText, startX, simControlsY + 195, 18, WHITE);
+    DrawText(cellFallingText, startX, simControlsY + 195, 18, WHITE);  // Display falling state
+    DrawText(cellTypeText, startX, simControlsY + 215, 18, WHITE);  // Move type information down one row
 
     // Draw performance meter
     DrawFPS(startX, height - 30);
