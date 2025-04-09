@@ -3,44 +3,6 @@
 #include "raylib.h"
 #include <stdio.h>
 
-//sim rules.
-// cells do not "move" the properties of cells "move", so we never update the position of a cell, as it doesn't change. but the contents of that cell may change, and that gives the illusion of movement.
-// moisture is conserved, and only transacted in integer amounts. this is to prevent floating point errors from causing issues with the simulation. we can always convert to float for display purposes, but we should keep the internal representation as integers.
-// cells are defined in cell_types.h, and the grid is defined in grid.h. the grid is a 2D array of cells, and each cell has a type, moisture, temperature, age, and color. the color is used for display purposes only, and is not used for any calculations.
-// the age is used to determine if a cell can reproduce or die.
-// the temperature is used to determine if a cell can evaporate or freeze. 
-// moisture and moisturecapacity are used to determine if a cell can take, or give moisture to another cell. moisture is a value between 0 and moisturecapacity. 
-// air holds 100 units of moistute, water holes 1000 units of moisture meaing that it takes 10 units of air to condense into 1 cell of water.
-// water with no moisture remaining becomes air type.
-// moisture does double duty as the density value for the cell. if two water cells are touching, and their sum total would be less than the moisture capacity of a single cell, then will merge into a single cell.
-// partial water transfer is also possible, but leaves a cell with whatever the small moisture remainder is. we always transfer in integer amounts to avoid floating point errors.
-
-//potential update pattern variations.
-// randomly selectiong left/right per row
-// checkerboard pattern
-
-//for certain types we want to know if it's part of a bigger group of the same type. this allows us to partition off sections of the grid as "gas" or "liquid" regions that allows us to process things like pressure, and have objects move in clumps if we choose to.
-//to allow for clumping in certain cell types like soil. we can walk the grid to generate sub-arrays that represent the clumps of cells. this will allow us to process them as a single unit, and allow for more complex interactions between them. we can also use this to determine if a cell is part of a larger group of the same type, and if so, we can process them as a single unit. this will allow us to process things like pressure, and have objects move in clumps if we choose to.
-//example for soil, it would clump more in a certain moisture range, but when saturated, or quite dry it would flow or be pushed.
-
-//example for water vs soil. if we have a large cluster of water, and it's got a column of sand to it's left or right, that sand if it's really thin, say a few blocks can be saturated, and then start to slump as the water pushes it  out of the way. 
-// a larger amount of sand would be able to prevent the water from moving it, but moisture could slowly transfer through the sand, eventually condensing into water droplets on the surface of the sand as the water will prefer to travel horizontally through soil via a diffusion like mechanism
-//the diffusion mechanism will be impimmented using integers, and not take or give mor water than should exist to keep the sim stable.
-// this will be done by only transfering amounts that exist, and that we have checked that the destinatiion cell had room for.
-
-//plan for update cells.c
-// first step is to determine if the cell needs to be supported. this is dependant on cell type, and if we have neighbors that we are attracted to so each cell should have a preset bit mask of regions that it checks for support.
-// 
-// if we find that we can move, we check based on the bitmask which of the available directions is prefered based on the rules for this cell type.
-
-
-
-
-
-
-
-
-
 
 
 
