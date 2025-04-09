@@ -101,6 +101,26 @@ void updateCells(void) {
             }
         }
     }
+    
+    // New pass: update columns for cohesive falling movement
+    for (int x = 1; x < GRID_WIDTH - 1; x++) {
+        for (int y = GRID_HEIGHT - 2; y > 1; y--) {
+            if (grid[y][x].type == CELL_TYPE_AIR) {
+                int t;
+                // Scan upward from the air cell to find a falling cell
+                for (t = y - 1; t > 0; t--) {
+                    if (grid[t][x].type != CELL_TYPE_AIR && grid[t][x].is_falling) {
+                        break;
+                    }
+                }
+                if (t > 0) {
+                    SwapCells(x, t, x, y);
+                    grid[y][x].updated_this_frame = true;
+                    grid[t][x].updated_this_frame = true;
+                }
+            }
+        }
+    }
 }
 
 // Route each cell to its appropriate update function
