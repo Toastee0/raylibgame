@@ -26,10 +26,9 @@ void updateCells(void) {
     static bool scanLeftToRight = true;
     scanLeftToRight = !scanLeftToRight;
     
-    // Reset all falling states at the start of a new frame
+    // Reset all cell update flags for the new frame (do not reset is_falling so that falling blocks remain intact)
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
-            grid[y][x].is_falling = false;
             grid[y][x].updated_this_frame = false;
         }
     }
@@ -102,23 +101,29 @@ void updateCells(void) {
         }
     }
     
-    // New pass: update columns for cohesive falling movement
+    // Revised Phase 2: For each column, scan upward repeatedly.
+    // If an air cell is found, swap the topmost cell of the contiguous falling soil block immediately above it,
+    // then resume scanning from the new top of the blob.
     for (int x = 1; x < GRID_WIDTH - 1; x++) {
-        for (int y = GRID_HEIGHT - 2; y > 1; y--) {
+        int y = GRID_HEIGHT - 2;
+        while (y > 1) {
             if (grid[y][x].type == CELL_TYPE_AIR) {
-                int t;
-                // Scan upward from the air cell to find a falling cell
-                for (t = y - 1; t > 0; t--) {
-                    if (grid[t][x].type != CELL_TYPE_AIR && grid[t][x].is_falling) {
-                        break;
-                    }
+                int blobTop = y - 1;
+                // Find the top of the blob (contiguous falling soil)
+                while (blobTop > 0 && grid[blobTop][x].type == CELL_TYPE_SOIL && grid[blobTop][x].is_falling) {
+                    blobTop--;
                 }
-                if (t > 0) {
-                    SwapCells(x, t, x, y);
+                int topOfBlob = blobTop + 1;
+                if (topOfBlob < y) {
+                    SwapCells(x, topOfBlob, x, y);
+                    grid[y][x].is_falling = true;
                     grid[y][x].updated_this_frame = true;
-                    grid[t][x].updated_this_frame = true;
+                    // Continue scanning from the new top of the blob.
+                    y = topOfBlob;
+                    continue; // re-check this column from new position
                 }
             }
+            y--;
         }
     }
 }
@@ -156,8 +161,16 @@ void updateCell(int x, int y) {
 
 // Update soil cell physics and behavior
 void updateSoilCell(int x, int y) {
-    // Get allowed movement directions based on physics rules
-    unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_SOIL);
+    // Phase 1: Determine falling state based on support.
+    if (y < GRID_HEIGHT - 1) {
+        if (grid[y+1][x].type == CELL_TYPE_AIR || 
+            (grid[y+1][x].type == CELL_TYPE_SOIL && grid[y+1][x].is_falling) ||
+            (grid[y+1][x].type == CELL_TYPE_WATER)) {
+            grid[y][x].is_falling = true;
+        } else {
+            grid[y][x].is_falling = false;
+        }
+    }
     
     // Update soil color based on moisture
     float moistureRatio = (float)grid[y][x].moisture / 100.0f;
@@ -168,45 +181,42 @@ void updateSoilCell(int x, int y) {
         255
     };
     
-    // Try falling motion first - straight down is preferred
-    if (moveDirs & DIR_DOWN) {
-        if (tryMoveInDirection(x, y, DIR_DOWN)) {
-            return;
+    // Only check for movement if the soil isn't already falling
+    if (!grid[y][x].is_falling) {
+        // Get allowed movement directions based on physics rules
+        unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_SOIL);
+        bool fell = false;
+        // Try falling motion first - straight down is preferred
+        if (moveDirs & DIR_DOWN) {
+            if (tryMoveInDirection(x, y, DIR_DOWN)) {
+                return;
+            }
         }
-    }
-    
-    // Try diagonal falling
-    bool fell = false;
-    if ((moveDirs & DIR_DOWN_LEFT) && (moveDirs & DIR_DOWN_RIGHT)) {
-        // Choose randomly between the two diagonals
-        if (GetRandomValue(0, 1) == 0) {
+        if ((moveDirs & DIR_DOWN_LEFT) && (moveDirs & DIR_DOWN_RIGHT)) {
+            if (GetRandomValue(0, 1) == 0) {
+                fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
+            } else {
+                fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
+            }
+        } else if (moveDirs & DIR_DOWN_LEFT) {
             fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
-        } else {
+        } else if (moveDirs & DIR_DOWN_RIGHT) {
             fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
         }
-    } else if (moveDirs & DIR_DOWN_LEFT) {
-        fell = tryMoveInDirection(x, y, DIR_DOWN_LEFT);
-    } else if (moveDirs & DIR_DOWN_RIGHT) {
-        fell = tryMoveInDirection(x, y, DIR_DOWN_RIGHT);
-    }
-    
-    // If cell didn't fall, try to slide horizontally based on slope
-    if (!fell) {
+        if (fell) return;
+        
+        // Additionally try horizontal sliding if on a slope.
         bool isOnSlope = false;
         bool slopeLeft = false;
-        
-        // Check if cell is on a slope
-        if ((grid[y+1][x-1].type == CELL_TYPE_AIR || grid[y+1][x-1].type == CELL_TYPE_WATER) && 
+        if ((grid[y+1][x-1].type == CELL_TYPE_AIR || grid[y+1][x-1].type == CELL_TYPE_WATER) &&
             (grid[y+1][x].type != CELL_TYPE_AIR && grid[y+1][x].type != CELL_TYPE_WATER)) {
             isOnSlope = true;
             slopeLeft = true;
-        } else if ((grid[y+1][x+1].type == CELL_TYPE_AIR || grid[y+1][x+1].type == CELL_TYPE_WATER) && 
-                  (grid[y+1][x].type != CELL_TYPE_AIR && grid[y+1][x].type != CELL_TYPE_WATER)) {
+        } else if ((grid[y+1][x+1].type == CELL_TYPE_AIR || grid[y+1][x+1].type == CELL_TYPE_WATER) &&
+                   (grid[y+1][x].type != CELL_TYPE_AIR && grid[y+1][x].type != CELL_TYPE_WATER)) {
             isOnSlope = true;
             slopeLeft = false;
         }
-        
-        // Try to slide on slope
         if (isOnSlope) {
             if (slopeLeft && (moveDirs & DIR_LEFT)) {
                 tryMoveInDirection(x, y, DIR_LEFT);
@@ -216,7 +226,6 @@ void updateSoilCell(int x, int y) {
         }
     }
     
-    // Soil moisture diffusion to be implemented
 }
 
 // Update water cell physics and behavior
@@ -287,56 +296,26 @@ void updateWaterCell(int x, int y) {
     }
 }
 
-// Update air cell physics (including moisture and clouds)
+// New updateAirCell: Process air cells without swapping with sand.
 void updateAirCell(int x, int y) {
-    // Air tends to rise
-    unsigned char moveDirs = getValidDirections(x, y, CELL_TYPE_AIR);
-    
-    // Update air color based on moisture
+    // Update air color based on moisture.
     if (grid[y][x].moisture > 75) {
         int brightness = (grid[y][x].moisture - 75) * (255 / 25);
         grid[y][x].baseColor = (Color){brightness, brightness, brightness, 255};
     } else {
-        grid[y][x].baseColor = BLACK;  // Invisible air
+        grid[y][x].baseColor = BLACK;  // Invisible air.
     }
     
-    // Only move air cells with high moisture (rising vapor)
-    if (grid[y][x].moisture > 50) {
-        // Try rising straight up
-        if (moveDirs & DIR_UP) {
-            if (tryMoveInDirection(x, y, DIR_UP)) {
-                return;
-            }
-        }
-        
-        // Try diagonal rising
-        if ((moveDirs & DIR_UP_LEFT) && (moveDirs & DIR_UP_RIGHT)) {
-            // Choose randomly between the two diagonals
-            if (GetRandomValue(0, 1) == 0) {
-                tryMoveInDirection(x, y, DIR_UP_LEFT);
-            } else {
-                tryMoveInDirection(x, y, DIR_UP_RIGHT);
-            }
-        } else if (moveDirs & DIR_UP_LEFT) {
-            tryMoveInDirection(x, y, DIR_UP_LEFT);
-        } else if (moveDirs & DIR_UP_RIGHT) {
-            tryMoveInDirection(x, y, DIR_UP_RIGHT);
-        }
-        
-        // Horizontal movement of air (wind) will be implemented here
-    }
-    
-    // Moisture diffusion between air cells
+    // Remove rising/swapping movement.
+    // Instead, perform only moisture diffusion.
     for (int i = 0; i < 8; i++) {
         int nx = x + DIR_X[i];
         int ny = y + DIR_Y[i];
-        
         if (nx < 1 || nx >= GRID_WIDTH-1 || ny < 1 || ny >= GRID_HEIGHT-1) continue;
-        
         if (grid[ny][nx].type == CELL_TYPE_AIR && !grid[ny][nx].updated_this_frame) {
             int moistureDiff = grid[y][x].moisture - grid[ny][nx].moisture;
             if (moistureDiff > 1) {
-                int transfer = moistureDiff / 8;  // Distribute gradually
+                int transfer = moistureDiff / 8;  // Gradual diffusion.
                 if (transfer > 0) {
                     tryMoistureDiffusion(x, y, 1 << i, transfer);
                 }
@@ -344,15 +323,16 @@ void updateAirCell(int x, int y) {
         }
     }
     
-    // Cloud formation and precipitation will be implemented here
+    // Cloud formation and precipitation remain.
     if (grid[y][x].moisture > 95) {
-        // Chance to form water droplet (precipitation)
         if (GetRandomValue(0, 100) < 5) {
             grid[y][x].type = CELL_TYPE_WATER;
             grid[y][x].moisture = 100;
             grid[y][x].baseColor = (Color){20, 120, 255, 255};
         }
     }
+    
+    grid[y][x].updated_this_frame = true;
 }
 
 // Update plant cell growth and interactions
