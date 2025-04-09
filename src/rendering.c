@@ -70,10 +70,10 @@ void DrawGameGrid(void) {
     if (IsKeyDown(KEY_EQUAL)) camera.zoom *= 1.02f;
     if (IsKeyDown(KEY_MINUS)) camera.zoom *= 0.98f;
     
-    // Handle zoom with mouse wheel when shift is not held down
+    // Handle zoom with mouse wheel when CTRL is held down (changed from non-SHIFT to CTRL)
     float wheel = GetMouseWheelMove();
-    if (wheel != 0 && !IsKeyDown(KEY_LEFT_SHIFT)) {
-        // Zoom with mouse wheel when not changing brush size
+    if (wheel != 0 && IsKeyDown(KEY_LEFT_CONTROL)) {
+        // Zoom with mouse wheel when CTRL is pressed
         Vector2 mousePos = GetMousePosition();
         
         // Only zoom if mouse is in the game area (not UI)
@@ -244,7 +244,7 @@ void DrawUI(void) {
     
     // Draw the brush size indicator in top-right corner
     int margin = 20;
-    int indicatorRadius = brushRadius * 4; // Scale up for better visibility
+    int indicatorRadius = brushRadius; // Remove the scaling factor to show actual size
     int centerX = GetScreenWidth() - margin - indicatorRadius;
     int centerY = margin + indicatorRadius;
     
@@ -255,9 +255,9 @@ void DrawUI(void) {
     DrawCircle(centerX, centerY, indicatorRadius - 2, Fade(DARKGRAY, 0.7f));
     
     // Draw text showing the actual brush radius
-    char radiusText[10];
-    snprintf(radiusText, sizeof(radiusText), "R: %d", brushRadius);
-    DrawText(radiusText, centerX - 20, centerY - 10, 20, WHITE);
+    char radiusText[20];
+    snprintf(radiusText, sizeof(radiusText), "Size: %d cell(s)", brushRadius*2-1);
+    DrawText(radiusText, centerX - 50, centerY - 10, 20, WHITE);
     
     // Draw current brush at mouse position in game area
     Vector2 mousePos = GetMousePosition();
@@ -268,8 +268,8 @@ void DrawUI(void) {
         Vector2 worldPos = GetScreenToWorld2D(mousePos, camera);
         Vector2 screenPos = GetWorldToScreen2D(worldPos, camera);
         
-        // Draw the brush circle at the correct screen position
-        DrawCircleLines((int)screenPos.x, (int)screenPos.y, brushRadius * CELL_SIZE * camera.zoom, WHITE);
+        // Draw the brush circle at the correct screen position - show actual size
+        DrawCircleLines((int)screenPos.x, (int)screenPos.y, brushRadius * camera.zoom, WHITE);
     }
     
     // Draw other UI elements

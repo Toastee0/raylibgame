@@ -34,9 +34,9 @@ void HandleInput(void) {
         }
     }
     
-    // Handle brush size changes with mouse wheel when Shift is held
+    // Handle brush size changes with mouse wheel by default (no modifier key needed)
     float wheelMove = GetMouseWheelMove();
-    if(IsKeyDown(KEY_LEFT_SHIFT) && wheelMove != 0) {
+    if (wheelMove != 0 && !IsKeyDown(KEY_LEFT_CONTROL)) {
         brushRadius += (int)wheelMove;
         // Clamp brush radius between 1 and 32
         brushRadius = (brushRadius < 1) ? 1 : ((brushRadius > 32) ? 32 : brushRadius);

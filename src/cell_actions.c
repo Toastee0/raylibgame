@@ -4,6 +4,7 @@
 #include "cell_defaults.h"  // Add this include
 #include <stdio.h>
 #include <stdbool.h>
+#include <math.h>  // Add this include for sqrtf
 
 // Move cell contents from one position to another
 void MoveCell(int fromX, int fromY, int toX, int toY) {
@@ -238,43 +239,44 @@ void PlaceAir(Vector2 position) {
     }
 }
 
-// Place cells in a circular pattern
+// Place cells in a circular pattern centered at the given position
 void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
-    for(int y = centerY - radius; y <= centerY + radius; y++) {
-        for(int x = centerX - radius; x <= centerX + radius; x++) {
-            // Skip border cells
-            if (x <= 0 || x > GRID_WIDTH - 1 || y <= 0 || y > GRID_HEIGHT - 1) {
+    // For all brush sizes, place cells in a circular pattern
+    for (int y = centerY - radius; y <= centerY + radius; y++) {
+        for (int x = centerX - radius; x <= centerX + radius; x++) {
+            // Skip out of bounds cells
+            if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
                 continue;
             }
-
-            float distanceSquared = (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY);
-
-            if(distanceSquared <= radius * radius && x > 0 && x < GRID_WIDTH && y > 0 && y < GRID_HEIGHT) {
-                switch(cellType) {
+            
+            // Calculate distance from center
+            float distance = sqrtf((float)((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)));
+            
+            // Place cell if within radius
+            if (distance <= radius) {
+                // Use the appropriate placement function based on cell type
+                Vector2 position = {(float)x, (float)y};
+                switch (cellType) {
+                    case CELL_TYPE_AIR:
+                        PlaceAir(position);
+                        break;
                     case CELL_TYPE_SOIL:
-                        PlaceSoil((Vector2){x, y});
+                        PlaceSoil(position);
                         break;
                     case CELL_TYPE_WATER:
-                        PlaceWater((Vector2){x, y});
+                        PlaceWater(position);
                         break;
                     case CELL_TYPE_PLANT:
-                        PlacePlant((Vector2){x, y});
+                        PlacePlant(position);
                         break;
                     case CELL_TYPE_ROCK:
-                        PlaceRock((Vector2){x, y});
+                        PlaceRock(position);
                         break;
                     case CELL_TYPE_MOSS:
-                        PlaceMoss((Vector2){x, y});
-                        break;
-                    case CELL_TYPE_AIR:
-                        PlaceAir((Vector2){x, y});
+                        PlaceMoss(position);
                         break;
                 }
             }
         }
     }
 }
-
-// Function to absorb moisture from one cell to another
-// sourceMoisture is the source cell's moisture level
-// targetMoisture is the cell absorbing the moisture
