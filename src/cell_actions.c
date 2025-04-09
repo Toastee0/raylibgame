@@ -241,7 +241,36 @@ void PlaceAir(Vector2 position) {
 
 // Place cells in a circular pattern centered at the given position
 void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
-    // For all brush sizes, place cells in a circular pattern
+    // Special case for brush size 1: just place a single cell at the center
+    if (radius == 1) {
+        Vector2 position = {(float)centerX, (float)centerY};
+        switch (cellType) {
+            case CELL_TYPE_AIR:
+                PlaceAir(position);
+                break;
+            case CELL_TYPE_SOIL:
+                PlaceSoil(position);
+                break;
+            case CELL_TYPE_WATER:
+                PlaceWater(position);
+                break;
+            case CELL_TYPE_PLANT:
+                PlacePlant(position);
+                break;
+            case CELL_TYPE_ROCK:
+                PlaceRock(position);
+                break;
+            case CELL_TYPE_MOSS:
+                PlaceMoss(position);
+                break;
+        }
+        return;
+    }
+    
+    // For larger brushes, use radius-1 to get the right size
+    float actualRadius = radius - 1.0f;
+    
+    // Place cells in a circular pattern
     for (int y = centerY - radius; y <= centerY + radius; y++) {
         for (int x = centerX - radius; x <= centerX + radius; x++) {
             // Skip out of bounds cells
@@ -253,8 +282,7 @@ void PlaceCircularPattern(int centerX, int centerY, int cellType, int radius) {
             float distance = sqrtf((float)((x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)));
             
             // Place cell if within radius
-            if (distance <= radius) {
-                // Use the appropriate placement function based on cell type
+            if (distance <= actualRadius) {
                 Vector2 position = {(float)x, (float)y};
                 switch (cellType) {
                     case CELL_TYPE_AIR:

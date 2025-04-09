@@ -45,8 +45,17 @@ void HandleInput(void) {
     // Get mouse position
     Vector2 mousePos = GetMousePosition();
 
-    // Calculate UI position
-    int uiStartX = GetScreenWidth() - uiPanelWidth;
+    // Get the actual UI panel width as used in DrawUIOnRight in rendering.c
+    int screenWidth = GetScreenWidth();
+    int uiWidth = 300; // Fixed UI width (matches the value in DrawUIOnRight)
+    
+    // Ensure UI doesn't exceed 30% of screen (same logic as in DrawUIOnRight)
+    if (uiWidth > screenWidth * 0.3) {
+        uiWidth = screenWidth * 0.3;
+    }
+    
+    // Calculate the UI starting position exactly as done in rendering.c
+    int uiStartX = screenWidth - uiWidth;
 
     // Determine if the cursor is in the game area or UI area
     bool isInGameArea = mousePos.x < uiStartX;
