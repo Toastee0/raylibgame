@@ -30,4 +30,7 @@ bool SaveGridToFile(const char* filename);
 // Load grid from file - returns true if successful
 bool LoadGridFromFile(const char* filename);
 
+// Main grid update function
+void UpdateGrid(void);
+
 #endif // GRID_H

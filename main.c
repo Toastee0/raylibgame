@@ -15,7 +15,6 @@
 #include "src/cell_types.h"
 #include "src/grid.h"
 #include "src/cell_actions.h"
-#include "src/simulation.h"
 #include "src/input.h"
 #include "src/rendering.h"
 #include "src/button_registry.h"
@@ -133,7 +132,6 @@ void HandleWindowResize(void) {
 // Local Functions Declaration
 //----------------------------------------------------------------------------------
 static void UpdateDrawFrame(void);
-void SetSimulationState(bool running, bool paused);
 void HandleStateMessages(void);
 
 int main(void) {
@@ -228,18 +226,3 @@ void HandleStateMessages(void) {
     }
 }
 
-// Update state change flag when simulation state changes
-void SetSimulationState(bool running, bool paused) {
-    if (running && grid == NULL) {
-        // Initialize grid if trying to start simulation and grid isn't ready
-        InitGrid();
-        printf("Grid initialized during simulation start\n");
-    }
-    
-    if (simulationRunning != running || simulationPaused != paused) {
-        stateChanged = true;
-        pauseMessageDrawn = false; // Reset pause message flag on state change
-    }
-    simulationRunning = running;
-    simulationPaused = paused;
-}

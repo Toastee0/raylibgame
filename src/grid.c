@@ -4,6 +4,7 @@
 #include <string.h>  // For memcpy
 #include "cell_defaults.h"
 #include "cell_types.h"
+#include "updatecells.h"
 
 // Grid constants
 int CELL_SIZE = 8;
@@ -242,4 +243,30 @@ bool LoadGridFromFile(const char* filename) {
     fclose(file);
 
     printf("Grid loaded from: %s\n", filename);    return true;
+}
+
+// Main simulation update function
+void UpdateGrid(void) {
+    // Reset all falling states before processing movement
+    for (int y = 0; y < GRID_HEIGHT; y++) {
+        for (int x = 0; x < GRID_WIDTH; x++) {
+            grid[y][x].is_falling = false;
+        }
+    }
+
+    static int updateCount = 0;
+    updateCount++;
+
+    // Ensure all border cells are consistently initialized to DARKGRAY
+    for (int y = 0; y < GRID_HEIGHT; y++) {
+        for (int x = 0; x < GRID_WIDTH; x++) {
+            if (x == 0 || x == GRID_WIDTH - 1 || y == 0 || y == GRID_HEIGHT - 1) {
+                grid[y][x].type = CELL_TYPE_BORDER;
+                grid[y][x].baseColor = DARKGRAY; // Set all border cells to DARKGRAY
+            }
+        }
+    }
+
+    // Update all cell types in the right order 
+    updateCells();
 }
