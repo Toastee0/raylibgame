@@ -5,6 +5,8 @@
 #include "cell_types.h"
 #include "button_registry.h"
 #include "viewport.h"
+#include <time.h>   // For time functions
+#include <stdio.h>  // For sprintf function
 
 // External variables needed for input handling
 extern int brushRadius;
@@ -42,39 +44,75 @@ void HandleInput(void) {
         brushRadius = (brushRadius < 1) ? 1 : ((brushRadius > 32) ? 32 : brushRadius);
     }
     
-    // Get mouse position
-    Vector2 mousePos = GetMousePosition();
-
-    // Get the actual UI panel width as used in DrawUIOnRight in rendering.c
-    int screenWidth = GetScreenWidth();
-    int uiWidth = 300; // Fixed UI width (matches the value in DrawUIOnRight)
-    
-    // Ensure UI doesn't exceed 30% of screen (same logic as in DrawUIOnRight)
-    if (uiWidth > screenWidth * 0.3) {
-        uiWidth = screenWidth * 0.3;
+    // Grid save/load keyboard shortcuts
+    if (IsKeyPressed(KEY_F5)) {
+        // Save grid with timestamp
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        char filename[128];
+        sprintf(filename, "save_%04d%02d%02d_%02d%02d%02d.grid", 
+                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                t->tm_hour, t->tm_min, t->tm_sec);
+        
+        // Save to timestamped file
+        if (SaveGridToFile(filename)) {
+            // Also update the "last save" file for F9 to work properly
+            SaveGridToFile("lastsave.grid");
+            printf("Saved to %s and lastsave.grid\n", filename);
+        }
     }
     
-    // Calculate the UI starting position exactly as done in rendering.c
-    int uiStartX = screenWidth - uiWidth;
-
-    // Determine if the cursor is in the game area or UI area
-    bool isInGameArea = mousePos.x < uiStartX;
-
-    // Check if mouse started in UI panel
-    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) || 
-        IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) || 
-        IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
-        if (mousePos.x > uiStartX && mousePos.x < GetScreenWidth()) {
-            mouseStartedInUI = true;
+    // Quick save with F6 (just saves to static file)
+    if (IsKeyPressed(KEY_F6)) {
+        if (SaveGridToFile("lastsave.grid")) {
+            printf("Quick saved to lastsave.grid\n");
         } else {
-            mouseStartedInUI = false;
+            printf("Failed to save lastsave.grid\n");
         }
+    }
+    
+    // Load last saved grid with F9
+    if (IsKeyPressed(KEY_F9)) {
+        LoadGridFromFile("lastsave.grid");
+    }
+    
+    // Get mouse position
+    Vector2 mousePos = GetMousePosition();
+    
+    // Get the screen width and calculate viewport/UI boundaries
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    // Calculate the game area width based on the actual grid dimensions
+    // Ensure all grid cells are accessible by calculating viewport based on grid size
+    int gameAreaWidth = (GRID_WIDTH * CELL_SIZE) / camera.zoom; // Convert grid size to screen pixels
+    
+    // Use the larger of calculated game area and default viewport width
+    int viewportWidth = screenWidth - uiPanelWidth;
+    if (gameAreaWidth > viewportWidth) {
+        // If grid requires more space, prioritize grid access
+        viewportWidth = gameAreaWidth;
+    }
+    
+    // Debug output to help diagnose boundary issues
+    if (IsKeyPressed(KEY_F1)) {
+        printf("DEBUG: Grid width=%d cells, Screen width=%d, Game area width=%d, viewport width=%d\n",
+               GRID_WIDTH, screenWidth, gameAreaWidth, viewportWidth);
+        printf("DEBUG: Mouse at x=%f, Last clickable cell=%d\n", mousePos.x, (int)(mousePos.x / CELL_SIZE));
+        printf("DEBUG: Mouse is in %s\n", mousePos.x < viewportWidth ? "GAME AREA" : "UI AREA");
+    }
+    
+    // Determine if the cursor is in the game area
+    bool isInGameArea = (mousePos.x < viewportWidth);
+    
+    // Track when mouse is initially pressed
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) || IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+        mouseStartedInUI = !isInGameArea;
     }
     
     // Handle UI interaction
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !isInGameArea) {
         // UI area click handling
-
         // Use the registered button locations to determine clicks
         for (int i = 0; i <= CELL_TYPE_MOSS; i++) {
             if (IsMouseOverButton(i, mousePos.x, mousePos.y)) {
@@ -82,7 +120,6 @@ void HandleInput(void) {
                 break;
             }
         }
-        
         return; // Skip game area handling
     }
     
@@ -96,7 +133,7 @@ void HandleInput(void) {
             // Calculate grid cell from world position
             int gridX = (int)(worldPos.x / CELL_SIZE);
             int gridY = (int)(worldPos.y / CELL_SIZE);
-
+            
             // Ensure the grid coordinates are within bounds
             if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
                 // Handle cell placement logic here

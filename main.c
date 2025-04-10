@@ -95,8 +95,7 @@ void HandleWindowResize(void) {
         gameWidth = CELL_SIZE * GRID_WIDTH;
         gameHeight = CELL_SIZE * GRID_HEIGHT;
 
-        // Ensure the UI panel width remains consistent
-        uiPanelWidth = newWidth - gameWidth;
+       
 
         // Redraw black background after resize
         blackBackgroundDrawn = false;

@@ -1,5 +1,9 @@
 Screenshot 2025-03-29 121149.png
 obj/main.o
-obj/src/grid.o
-obj/src/simulation.o
+obj\src\*.o
 game.exe
+*.grid
+obj/main.o
+obj/src/grid.o
+obj/src/input.o
+obj/main.o

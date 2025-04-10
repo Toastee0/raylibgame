@@ -24,4 +24,10 @@ bool IsBorderTile(int x, int y);
 // Check if we can move to a tile
 bool CanMoveTo(int x, int y);
 
+// Save grid to file - returns true if successful
+bool SaveGridToFile(const char* filename);
+
+// Load grid from file - returns true if successful
+bool LoadGridFromFile(const char* filename);
+
 #endif // GRID_H
