@@ -44,10 +44,10 @@ bool pauseMessageDrawn = false;       // Flag to track if the pause message has 
 bool stateChanged = true;             // Flag to detect state changes
 
 // Window and UI dimensions
-int windowWidth = 1920+300;
+int windowWidth = 1920;
 int windowHeight = 1080;
 int uiPanelWidth = 300;  // Width of right side UI panel
-int gameWidth;           // Will be calculated based on grid dimensions
+int gameWidth = 1920-300;            // Will be calculated based on grid dimensions
 int gameHeight;          // Will be calculated based on grid dimensions
 int minGameWidth = 800;  // Minimum game area width
 bool blackBackgroundDrawn = false;  // Flag to track initial drawing
@@ -56,7 +56,7 @@ bool blackBackgroundDrawn = false;  // Flag to track initial drawing
 void HandleWindowResize(void) {
     static int lastWidth = 0;
     static int lastHeight = 0;
-
+    
     // Get DPI scaling factor
     Vector2 dpiScale = GetWindowScaleDPI();
 
