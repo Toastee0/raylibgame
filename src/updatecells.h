@@ -19,21 +19,5 @@ extern const int DIR_X[8];
 extern const int DIR_Y[8];
 
 // Main update function to replace UpdateGrid
-void updateCells(void);
-
-// Cell type specific update functions
-void updateCell(int x, int y);
-void updateSoilCell(int x, int y);
-void updateWaterCell(int x, int y);
-void updateAirCell(int x, int y);
-void updatePlantCell(int x, int y);
-void updateMossCell(int x, int y);
-
-// Helper functions
-unsigned char getValidDirections(int x, int y, int cellType);
-unsigned char getEmptyDirections(int x, int y);
-unsigned char getMoistureDirections(int x, int y, int threshold);
-bool tryMoveInDirection(int x, int y, unsigned char direction);
-bool tryMoistureDiffusion(int x, int y, unsigned char direction, int amount);
 
 #endif // UPDATECELLS_H
