@@ -9,6 +9,8 @@
 // External variables needed for UI rendering
 extern int brushRadius;
 extern int currentSelectedType;
+extern bool simulationRunning;
+extern bool simulationPaused;
 
 // Camera for grid navigation
 Camera2D camera = {0};
@@ -150,7 +152,23 @@ void DrawGameGrid(void) {
         for (int j = startCol; j < endCol; j++) {
             // Safety check to prevent segfaults
             if (i >= 0 && i < GRID_HEIGHT && j >= 0 && j < GRID_WIDTH && grid && grid[i]) {
-                Color cellColor = grid[i][j].baseColor;
+                // Add additional check for accessing baseColor property
+                Color cellColor = BLACK; // Default color in case of error
+                
+                // Only access the baseColor if we are sure the grid cell exists and has a valid type
+                if (grid[i][j].type >= 0 && grid[i][j].type <= CELL_TYPE_MOSS) {
+                    // For air cells, make them completely black before simulation starts
+                    if (grid[i][j].type == CELL_TYPE_AIR && (!simulationRunning || simulationPaused)) {
+                        cellColor = BLACK;
+                    } else {
+                        cellColor = grid[i][j].baseColor;
+                    }
+                } else if (grid[i][j].type == CELL_TYPE_BORDER) {
+                    cellColor = GRAY; // Default color for borders
+                } else if (grid[i][j].type == CELL_TYPE_EMPTY) {
+                    cellColor = BLACK; // Default color for empty cells
+                }
+                
                 DrawRectangle(
                     j * effectiveCellSize,
                     i * effectiveCellSize,
@@ -406,7 +424,7 @@ void DrawUIOnRight(int height, int width) {
         // Ensure the cell coordinates are within the grid bounds
         if (cellX >= 0 && cellX < GRID_WIDTH && cellY >= 0 && cellY < GRID_HEIGHT) {
             snprintf(cellUnderCursorText, sizeof(cellUnderCursorText), "Cell: (%d, %d)", cellX, cellY);
-            snprintf(cellMoistureText, sizeof(cellMoistureText), "Moisture: %d", grid[cellY][cellX].moisture);
+            
             snprintf(cellFallingText, sizeof(cellFallingText), "Falling: %s", grid[cellY][cellX].is_falling ? "Yes" : "No");
             
             int cellType = grid[cellY][cellX].type;

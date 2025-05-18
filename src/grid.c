@@ -58,8 +58,11 @@ void InitGrid(void) {
             // Use default initializer first to ensure complete initialization
             InitializeCellDefaults(&grid[i][j], CELL_TYPE_AIR);
             
-            // Set position coordinates
-            grid[i][j].position = (Vector2){j * CELL_SIZE, i * CELL_SIZE};
+            // Ensure that air cells start with nominal pressure and no water
+            if (!(i == 0 || i == GRID_HEIGHT - 1 || j == 0 || j == GRID_WIDTH - 1)) {
+                grid[i][j].pressure = grid[i][j].nominal_pressure;
+                grid[i][j].water = 0;  // No water content initially
+            }
             
             // Set border cells as immutable
             if (i == 0 || i == GRID_HEIGHT - 1 || j == 0 || j == GRID_WIDTH - 1) {
@@ -124,13 +127,23 @@ bool SaveGridToFile(const char* filename) {
     // Write cell data
     for (int y = 0; y < GRID_HEIGHT; y++) {
         for (int x = 0; x < GRID_WIDTH; x++) {
-            // Write only the essential properties to save space
+            // Write all properties from the current GridCell structure
             fwrite(&grid[y][x].type, sizeof(int), 1, file);
-            fwrite(&grid[y][x].moisture, sizeof(int), 1, file);
+            fwrite(&grid[y][x].objectID, sizeof(int), 1, file);
             fwrite(&grid[y][x].baseColor, sizeof(Color), 1, file);
-            fwrite(&grid[y][x].Energy, sizeof(int), 1, file);
+            fwrite(&grid[y][x].oxygen, sizeof(int), 1, file);
+            fwrite(&grid[y][x].water, sizeof(int), 1, file);
+            fwrite(&grid[y][x].mineral, sizeof(int), 1, file);
+            fwrite(&grid[y][x].pressure, sizeof(int), 1, file);
+            fwrite(&grid[y][x].density, sizeof(int), 1, file);
+            fwrite(&grid[y][x].dewpoint, sizeof(int), 1, file);
             fwrite(&grid[y][x].age, sizeof(int), 1, file);
+            fwrite(&grid[y][x].maxage, sizeof(int), 1, file);
             fwrite(&grid[y][x].temperature, sizeof(int), 1, file);
+            fwrite(&grid[y][x].freezingpoint, sizeof(int), 1, file);
+            fwrite(&grid[y][x].boilingpoint, sizeof(int), 1, file);
+            // Don't save runtime state flags (updated_this_frame, is_falling, empty)
+            // as these should be reset when loading anyway
         }
     }
     
@@ -188,7 +201,7 @@ bool LoadGridFromFile(const char* filename) {
         for (int x = 0; x < GRID_WIDTH; x++) {
             if (!(x == 0 || x == GRID_WIDTH-1 || y == 0 || y == GRID_HEIGHT-1)) {
                 InitializeCellDefaults(&grid[y][x], CELL_TYPE_AIR);
-                grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
+                
             }
         }
     }
@@ -201,48 +214,63 @@ bool LoadGridFromFile(const char* filename) {
         for (int x = 0; x < maxX; x++) {
             // Skip border cells
             if (x == 0 || x == GRID_WIDTH-1 || y == 0 || y == GRID_HEIGHT-1) {
-                // Skip this cell in the file too
-                fseek(file, sizeof(int)*3 + sizeof(Color) + sizeof(int)*2, SEEK_CUR);
+                // If file contains data for border cells, skip it
+                if (x < header.width && y < header.height) {
+                    // Calculate how many bytes to skip for each cell based on save format
+                    int bytesToSkip = sizeof(int) * 14 + sizeof(Vector2); // All saved fields
+                    fseek(file, bytesToSkip, SEEK_CUR);
+                }
                 continue;
             }
             
-            int type;
-            if (fread(&type, sizeof(int), 1, file) != 1) {
-                printf("ERROR: Failed to read cell data at (%d,%d)\n", x, y);
-                fclose(file);
-                return false;
-            }
-            
-            // Only change the cell type if it's valid
-            if (type >= CELL_TYPE_AIR && type <= CELL_TYPE_MOSS) {
-                grid[y][x].type = type;
+            if (x < header.width && y < header.height) {
+                int type;
+                if (fread(&type, sizeof(int), 1, file) != 1) {
+                    printf("ERROR: Failed to read cell data at (%d,%d)\n", x, y);
+                    fclose(file);
+                    return false;
+                }
                 
-                // Read other properties
-                fread(&grid[y][x].moisture, sizeof(int), 1, file);
-                fread(&grid[y][x].baseColor, sizeof(Color), 1, file);
-                fread(&grid[y][x].Energy, sizeof(int), 1, file);
-                fread(&grid[y][x].age, sizeof(int), 1, file);
-                fread(&grid[y][x].temperature, sizeof(int), 1, file);
-                
-                // Reset dynamic properties
-                grid[y][x].is_falling = false;
-                grid[y][x].updated_this_frame = false;
-            } else {
-                // Skip the rest of this cell's data
-                fseek(file, sizeof(int) + sizeof(Color) + sizeof(int)*3, SEEK_CUR);
+                // Only change the cell type if it's valid
+                if (type >= CELL_TYPE_AIR && type <= CELL_TYPE_EMPTY || type == CELL_TYPE_BORDER) {
+                    // First initialize with defaults for the type
+                    InitializeCellDefaults(&grid[y][x], type);
+                    
+                    // Then read specific saved properties
+                    fread(&grid[y][x].objectID, sizeof(int), 1, file);
+                    fread(&grid[y][x].baseColor, sizeof(Color), 1, file);
+                    fread(&grid[y][x].oxygen, sizeof(int), 1, file);
+                    fread(&grid[y][x].water, sizeof(int), 1, file);
+                    fread(&grid[y][x].mineral, sizeof(int), 1, file);
+                    fread(&grid[y][x].pressure, sizeof(int), 1, file);
+                    fread(&grid[y][x].density, sizeof(int), 1, file);
+                    fread(&grid[y][x].dewpoint, sizeof(int), 1, file);
+                    fread(&grid[y][x].age, sizeof(int), 1, file);
+                    fread(&grid[y][x].maxage, sizeof(int), 1, file);
+                    fread(&grid[y][x].temperature, sizeof(int), 1, file);
+                    fread(&grid[y][x].freezingpoint, sizeof(int), 1, file);
+                    fread(&grid[y][x].boilingpoint, sizeof(int), 1, file);
+                    
+                   
+                    
+                    // Reset runtime state flags
+                    grid[y][x].updated_this_frame = false;
+                    grid[y][x].is_falling = false;
+                    grid[y][x].empty = false;
+                } else {
+                    // Skip the rest of this cell's data
+                    int bytesToSkip = sizeof(int) * 13 + sizeof(Vector2); // All remaining fields
+                    fseek(file, bytesToSkip, SEEK_CUR);
+                    // Initialize as air
+                    InitializeCellDefaults(&grid[y][x], CELL_TYPE_AIR);
+                }
             }
-        }
-        
-        // Skip any extra cells in each row if file is wider than current grid
-        if (header.width > GRID_WIDTH) {
-            fseek(file, (sizeof(int)*3 + sizeof(Color) + sizeof(int)*2) * (header.width - GRID_WIDTH), SEEK_CUR);
         }
     }
     
-    // Skip any extra rows if file is taller than current grid
     fclose(file);
-
-    printf("Grid loaded from: %s\n", filename);    return true;
+    printf("Grid loaded from: %s\n", filename);
+    return true;
 }
 
 // Main simulation update function

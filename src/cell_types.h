@@ -11,27 +11,34 @@
 #define CELL_TYPE_PLANT 3 //plant, green varies a litte bit randomly as it grows to provide variation
 #define CELL_TYPE_ROCK 4 // rock, grey, cannot be moved. does not absorb moisture.
 #define CELL_TYPE_MOSS 5 // dark green, uses moisture, grows on soil. essentially green soil, but clumpy.
+#define CELL_TYPE_EMPTY 6 // empty, cells will prefer to fall into empty cells. these only exist temporarily in the sim buffer, and are not rendered.
+
 
 typedef struct {
     int type;  // -1 = immutable border 0 = air, 1 = soil, 2 = water, 3 = plant, 4 = vapor
     int objectID; //unique identifier for the object or plant 
-    Vector2 position;
-    Vector2 origin; //co ordinates of the first pixel of the object or plant, if a multi pixel object.
+    
     Color baseColor; //basic color of the pixel
-    int volume; //1-10, how much of the density of the object is filled, 1 = 10% 10 = 100%, for allowing water to evaoprate into moist air, or be absorbed by soil.
-    int Energy; //5 initial, reduced when replicating.
-    int height; //height of the pixel, intially 0, this is an offset to allow limiting and guiding the growth of plant type pixels.
-    int moisture; // Moisture level: 0-100 integer, 0 = dry, 100 = saturated
-    int desiredmoisture; //desired moisture level, used to guide the movement of water. 50 for sand, 100 for water, 20 for air.
-    int permeable; //0 = impermeable, 1 = permeable (water permeable)
+    //cells are made up of a ratio of the 3 main elements, oxygen, water, and minerals. the ratio of these elements is used to determine the color of the cell, and it's type for behavior.
+    int oxygen; //air is mosty oxygen ,but can carry small amounts of water and mineral.
+    int water; //water is mostly water but can carry small amounts of oxygen and minerals.
+    int mineral; //soil is mostly minerals, but can carry trap amounts of water and oxygen. rock is very dense soil.
+    int nominal_pressure; //the pressure of the cell, used for determining if the cell is a gas or liquid. (or solid) this is used to determine if the cell can be moved into or not.
+    int pressure; //used for allowing air to be displaced instead of swapped with other cells.
+    int density; //density of the object, used for storing the amount of material packed into the cell.
+    int dewpoint; //the temerpature at which the air becomes saturated with moisture, and water condenses out of the air. (or molten rock solidifies)
+
+    
     int age; //age of the object, used for plant growth and reproduction.
     int maxage; //max age of the object, used for plant growth and reproduction.
     int temperature; //temperature of the object.
-    int freezingpoint; //freezing point of the object.
-    int boilingpoint; //boiling point of the object.
-    int temperaturepreferanceoffset;
+    int freezingpoint; //freezing point of the object. (or solidicdification point for rocks/soil to not be molten)
+    int boilingpoint; //boiling point of the material, water, steam, etc.
+    
+
     bool updated_this_frame; // Add this flag to track updates
     bool is_falling; // New field to explicitly track falling state
+    bool empty; //tracks if the cell is empty because it was vacated by a falling object. these cells are not rendered, and should all be resolved to non-empty before we push the pixels to the second buffer.
 } GridCell;
 
 #endif // CELL_TYPES_H

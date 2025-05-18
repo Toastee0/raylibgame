@@ -7,83 +7,9 @@
 #include <math.h>  // Add this include for sqrtf
 
 // Move cell contents from one position to another
-void MoveCell(int fromX, int fromY, int toX, int toY) {
-    // Check bounds
-    if (fromX < 0 || fromX >= GRID_WIDTH || fromY < 0 || fromY >= GRID_HEIGHT ||
-        toX < 0 || toX >= GRID_WIDTH || toY < 0 || toY >= GRID_HEIGHT) {
-        return;
-    }
-    
-    // Store destination cell properties before overwriting
-    int destType = grid[toY][toX].type;
-    int destMoisture = grid[toY][toX].moisture;
-    int destTemp = grid[toY][toX].temperature;
-    int destAge = grid[toY][toX].age;
-    Color destColor = grid[toY][toX].baseColor;
-    int destEnergy = grid[toY][toX].Energy;
-    int destObjectID = grid[toY][toX].objectID;
-    
-    // Copy properties from source to destination
-    grid[toY][toX].type = grid[fromY][fromX].type;
-    grid[toY][toX].moisture = grid[fromY][fromX].moisture;
-    grid[toY][toX].temperature = grid[fromY][fromX].temperature;
-    grid[toY][toX].age = grid[fromY][fromX].age;
-    grid[toY][toX].baseColor = grid[fromY][fromX].baseColor;
-    grid[toY][toX].Energy = grid[fromY][fromX].Energy;
-    grid[toY][toX].objectID = grid[fromY][fromX].objectID;
-    
-    // Source becomes the destination's previous type (not always air)
-    grid[fromY][fromX].type = destType;
-    grid[fromY][fromX].moisture = destMoisture;
-    grid[fromY][fromX].temperature = destTemp;
-    grid[fromY][fromX].age = destAge;
-    grid[fromY][fromX].baseColor = destColor;
-    grid[fromY][fromX].Energy = destEnergy;
-    grid[fromY][fromX].objectID = destObjectID;
-}
 
 // Swap the contents of two cells
-void SwapCells(int x1, int y1, int x2, int y2) {
-    // Check bounds
-    if (x1 < 0 || x1 >= GRID_WIDTH || y1 < 0 || y1 >= GRID_HEIGHT ||
-        x2 < 0 || x2 >= GRID_WIDTH || y2 < 0 || y2 >= GRID_HEIGHT) {
-        return;
-    }
-    
-    // Temporarily store the properties of the first cell
-    GridCell temp;
-    temp.type = grid[y1][x1].type;
-    temp.moisture = grid[y1][x1].moisture;
-    temp.temperature = grid[y1][x1].temperature;
-    temp.age = grid[y1][x1].age;
-    temp.baseColor = grid[y1][x1].baseColor;
-    temp.Energy = grid[y1][x1].Energy;
-    temp.is_falling = grid[y1][x1].is_falling;
-    temp.updated_this_frame = grid[y1][x1].updated_this_frame;
-    temp.objectID = grid[y1][x1].objectID;
-    
-    // Copy properties from second cell to first cell
-    grid[y1][x1].type = grid[y2][x2].type;
-    grid[y1][x1].moisture = grid[y2][x2].moisture;
-    grid[y1][x1].temperature = grid[y2][x2].temperature;
-    grid[y1][x1].age = grid[y2][x2].age;
-    grid[y1][x1].baseColor = grid[y2][x2].baseColor;
-    grid[y1][x1].Energy = grid[y2][x2].Energy;
-    grid[y1][x1].is_falling = grid[y2][x2].is_falling;
-    grid[y1][x1].updated_this_frame = grid[y2][x2].updated_this_frame;
-    grid[y1][x1].objectID = grid[y2][x2].objectID;
-    
-    // Copy properties from temporary storage to second cell
-    grid[y2][x2].type = temp.type;
-    grid[y2][x2].moisture = temp.moisture;
-    grid[y2][x2].temperature = temp.temperature;
-    grid[y2][x2].age = temp.age;
-    grid[y2][x2].baseColor = temp.baseColor;
-    grid[y2][x2].Energy = temp.Energy;
-    grid[y2][x2].is_falling = temp.is_falling;
-    grid[y2][x2].updated_this_frame = temp.updated_this_frame;
-    grid[y2][x2].objectID = temp.objectID;
-}
+
 
 // Place soil at the given position
 void PlaceSoil(Vector2 position) {
@@ -95,7 +21,6 @@ void PlaceSoil(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_SOIL);
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
 }
 
 // Place water at the given position
@@ -108,18 +33,26 @@ void PlaceWater(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_WATER);
-    // Give newly placed water a random moisture level between 70 and 100
-    grid[y][x].moisture = 70 + GetRandomValue(0, 30);
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
     
-    // Update color based on moisture
-    float intensityPct = (float)grid[y][x].moisture / 100.0f;
+    // Set clean water properties
+    grid[y][x].water = 100;      // Pure water content
+    grid[y][x].pressure = grid[y][x].nominal_pressure;  // Use nominal pressure
+    grid[y][x].oxygen = 5;       // Small amount of dissolved oxygen
+    grid[y][x].mineral = 0;      // Clean water with no minerals
+    
+    // Vibrant blue color for clean water
     grid[y][x].baseColor = (Color){
-        0 + (int)(200 * (1.0f - intensityPct)),
-        120 + (int)(135 * (1.0f - intensityPct)),
-        255,
-        255
+        0,          // No red (pure blue)
+        120,        // Medium green component for cyan-blue
+        255,        // Full blue
+        255         // Full opacity
     };
+    
+    // Set falling state to false initially
+    grid[y][x].is_falling = false;
+    
+    // Mark as updated this frame to prevent immediate processing
+    grid[y][x].updated_this_frame = true;
 }
 
 // Place rock at the given position
@@ -132,7 +65,6 @@ void PlaceRock(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_ROCK);
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
     
     // Rocks can have slight color variation
     int variation = GetRandomValue(-15, 15);
@@ -159,7 +91,6 @@ void PlacePlant(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_PLANT);
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
     
     // Add some color variation to plants
     int greenVariation = GetRandomValue(-20, 20);
@@ -170,14 +101,11 @@ void PlacePlant(Vector2 position) {
         255
     };
     
-    // Start with some energy for growth
-    grid[y][x].Energy = 5 + GetRandomValue(0, 5);
-    
-    // Initialize age (starts at 0)
+      // Initialize age (starts at 0)
     grid[y][x].age = 0;
     
-    // Plants start with moderate moisture needs
-    grid[y][x].moisture = 50 + GetRandomValue(-10, 10);
+    // Plants start with moderate water content
+    grid[y][x].water = 50 + GetRandomValue(-10, 10);
     
     // Set a unique ID if tracking plants individually
     static int nextPlantID = 1;
@@ -194,7 +122,6 @@ void PlaceMoss(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_MOSS);
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
     
     // Moss has a darker green shade with some variation
     int greenVariation = GetRandomValue(-10, 10);
@@ -205,14 +132,13 @@ void PlaceMoss(Vector2 position) {
         255
     };
     
-    // Moss starts with less energy than plants
-    grid[y][x].Energy = 3 + GetRandomValue(0, 3);
+   
     
     // Initialize age (starts at 0)
     grid[y][x].age = 0;
     
-    // Moss prefers higher moisture
-    grid[y][x].moisture = 70 + GetRandomValue(-5, 15);
+    // Moss prefers higher water content
+    grid[y][x].water = 70 + GetRandomValue(-5, 15);
 }
 
 // Place air at the given position 
@@ -225,14 +151,13 @@ void PlaceAir(Vector2 position) {
     
     // Initialize with defaults first
     InitializeCellDefaults(&grid[y][x], CELL_TYPE_AIR);
-    grid[y][x].position = (Vector2){x * CELL_SIZE, y * CELL_SIZE};
     
-    // Air can have slight moisture variation
-    grid[y][x].moisture = GetRandomValue(5, 15);
+    // Air can have slight water content variation
+    grid[y][x].water = GetRandomValue(5, 15);
     
-    // Update color based on moisture (invisible until high moisture)
-    if (grid[y][x].moisture > 75) {
-        int brightness = (grid[y][x].moisture - 75) * (255 / 25);
+    // Update color based on water content (invisible until high water content)
+    if (grid[y][x].water > 75) {
+        int brightness = (grid[y][x].water - 75) * (255 / 25);
         grid[y][x].baseColor = (Color){brightness, brightness, brightness, 255};
     } else {
         grid[y][x].baseColor = BLACK;  // Invisible air
