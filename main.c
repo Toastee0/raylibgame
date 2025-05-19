@@ -13,8 +13,9 @@
 //----------------------------------------------------------------------------------
 // Local Variables Definition
 //----------------------------------------------------------------------------------
+// Leave room for the titlebar and start menu
 const int screenWidth = 1920;
-const int screenHeight = 1080;
+const int screenHeight = 1000; // Reduced height to leave space for OS UI elements
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
@@ -24,10 +25,10 @@ static void UpdateDrawFrame(void);  // Update and Draw one frame
 //----------------------------------------------------------------------------------
 // Main entry point
 //----------------------------------------------------------------------------------
-int main(void) {
-    // Initialization
+int main(void) {    // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(screenWidth, screenHeight, "raylib example");
+    SetWindowPosition(0, 30);       // Position window 10 pixels down from the top
     SetWindowState(FLAG_WINDOW_RESIZABLE);
     
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
