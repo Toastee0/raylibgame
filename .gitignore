@@ -8,3 +8,4 @@ obj/src/grid.o
 obj/src/input.o
 obj/main.o
 obj/src/updatecells.o
+
