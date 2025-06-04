@@ -1,0 +1,104 @@
+/**
+ * @file rendering.h
+ * @brief Functions for rendering the grid and UI
+ */
+
+#ifndef RENDERING_H
+#define RENDERING_H
+
+#include "grid.h"
+#include <raylib.h>
+
+/**
+ * @brief Initialize rendering resources
+ * 
+ * @param screen_width Width of the screen in pixels
+ * @param screen_height Height of the screen in pixels
+ * @return bool True if successful, false otherwise
+ */
+bool rendering_init(int screen_width, int screen_height);
+
+/**
+ * @brief Clean up rendering resources
+ */
+void rendering_cleanup(void);
+
+/**
+ * @brief Render the grid to the screen
+ * 
+ * @param grid Pointer to the grid
+ */
+void rendering_draw_grid(Grid* grid);
+
+/**
+ * @brief Draw the UI elements
+ * 
+ * @param grid Pointer to the grid
+ * @param selected_material Currently selected material
+ * @param brush_size Current brush size
+ * @param paused Whether the simulation is paused
+ * @param show_debug Whether to show debug information
+ */
+void rendering_draw_ui(Grid* grid, CellMaterial selected_material, int brush_size, bool paused, bool show_debug);
+
+/**
+ * @brief Convert a grid coordinate to a screen coordinate
+ * 
+ * @param grid_x X coordinate in the grid
+ * @param grid_y Y coordinate in the grid
+ * @param screen_x Pointer to store the resulting screen X coordinate
+ * @param screen_y Pointer to store the resulting screen Y coordinate
+ */
+void rendering_grid_to_screen(int grid_x, int grid_y, int *screen_x, int *screen_y);
+
+/**
+ * @brief Convert a screen coordinate to a grid coordinate
+ * 
+ * @param screen_x X coordinate on the screen
+ * @param screen_y Y coordinate on the screen
+ * @param grid_x Pointer to store the resulting grid X coordinate
+ * @param grid_y Pointer to store the resulting grid Y coordinate
+ */
+void rendering_screen_to_grid(int screen_x, int screen_y, int *grid_x, int *grid_y);
+
+/**
+ * @brief Set the zoom level for grid rendering
+ * 
+ * @param zoom New zoom level (1.0 is normal, greater is zoomed in)
+ */
+void rendering_set_zoom(float zoom);
+
+/**
+ * @brief Set the pan offset for grid rendering
+ * 
+ * @param pan_x X offset for panning
+ * @param pan_y Y offset for panning
+ */
+void rendering_set_pan(float pan_x, float pan_y);
+
+/**
+ * @brief Get the cell color based on its properties
+ * 
+ * @param cell Pointer to the cell
+ * @return Color The color to use for rendering
+ */
+Color rendering_get_cell_color(Cell* cell);
+
+/**
+ * @brief Draw debug information for a specific cell
+ * 
+ * @param grid Pointer to the grid
+ * @param x X coordinate of the cell
+ * @param y Y coordinate of the cell
+ */
+void rendering_draw_cell_debug(Grid* grid, int x, int y);
+
+/**
+ * @brief Convert an unsigned 32-bit RGBA color integer to a Raylib Color structure
+ * 
+ * @param color 32-bit color in RGBA format (0xRRGGBBAA)
+ * @return Color Raylib Color structure
+ */
+Color ColorFromInt(uint32_t color);
+
+#endif // RENDERING_H

@@ -1,10 +1,16 @@
 /*******************************************************************************************
 *
-*   raylib [core] example - Basic window
+*   Raylib Falling Sand Ecosystem Simulation
 *
 ********************************************************************************************/
 
+#include <stdlib.h>
 #include "raylib.h"
+#include "src/grid.h"
+#include "src/simulation.h"
+#include "src/rendering.h"
+#include "src/input.h"
+#include "src/debug_utils.h"
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>
@@ -13,40 +19,91 @@
 //----------------------------------------------------------------------------------
 // Local Variables Definition
 //----------------------------------------------------------------------------------
-// Leave room for the titlebar and start menu
-const int screenWidth = 1920;
-const int screenHeight = 1000; // Reduced height to leave space for OS UI elements
+// Window settings
+const int screenWidth = 1280;
+const int screenHeight = 720;
+const int targetFPS = 60;
+
+// Global state
+static Grid* grid = NULL;
+static CellMaterial selectedMaterial = MATERIAL_SAND;
+static int brushSize = 3;
+static bool paused = false;
+static bool showDebug = false;
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
 //----------------------------------------------------------------------------------
 static void UpdateDrawFrame(void);  // Update and Draw one frame
+static void CleanupResources(void); // Clean up resources
 
 //----------------------------------------------------------------------------------
 // Main entry point
 //----------------------------------------------------------------------------------
-int main(void) {    // Initialization
+int main(void) {
+    // Initialization
     //--------------------------------------------------------------------------------------
-    InitWindow(screenWidth, screenHeight, "raylib example");
-    SetWindowPosition(0, 30);       // Position window 10 pixels down from the top
-    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE);
+    InitWindow(screenWidth, screenHeight, "Raylib Falling Sand Ecosystem Simulation");
+    SetTargetFPS(targetFPS);
     
-    SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
+    // Initialize grid
+    grid = grid_init();
+    if (!grid) {
+        TraceLog(LOG_ERROR, "Failed to initialize grid!");
+        CloseWindow();
+        return 1;
+    }
+    
+    // Initialize rendering
+    if (!rendering_init(screenWidth, screenHeight)) {
+        TraceLog(LOG_ERROR, "Failed to initialize rendering!");
+        grid_free(grid);
+        CloseWindow();
+        return 1;
+    }
+    
+    // Initialize input handling
+    if (!input_init()) {
+        TraceLog(LOG_ERROR, "Failed to initialize input handling!");
+        grid_free(grid);
+        rendering_cleanup();
+        CloseWindow();
+        return 1;
+    }
+    
+    // Initialize simulation logic
+    if (!simulation_init()) {
+        TraceLog(LOG_ERROR, "Failed to initialize simulation!");
+        grid_free(grid);
+        rendering_cleanup();
+        CloseWindow();
+        return 1;
+    }
+    
+    // Add some initial materials
+    simulation_add_material(grid, GRID_WIDTH / 2, GRID_HEIGHT / 2, 20, MATERIAL_SAND);
+    simulation_add_material(grid, GRID_WIDTH / 2 - 30, GRID_HEIGHT / 2, 15, MATERIAL_WATER);
+    
     //--------------------------------------------------------------------------------------
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
-#else    // Main game loop
-    while (!WindowShouldClose())    // Detect window close button or ESC key
+#else
+    // Main game loop
+    while (!WindowShouldClose() && 
+           input_process(grid, &selectedMaterial, &brushSize, &paused, &showDebug))
     {
         UpdateDrawFrame();
+        
+        // Debug: Save grid to file every 300 frames (5 seconds at 60 fps)
+        if (grid->frame_counter % 300 == 0) {
+            save_grid_to_file(grid, "grid_debug.json");
+        }
     }
+    
+    CleanupResources();
 #endif
-
-    // De-Initialization
-    //--------------------------------------------------------------------------------------
-    CloseWindow();        // Close window and OpenGL context
-    //--------------------------------------------------------------------------------------
 
     return 0;
 }
@@ -55,18 +112,32 @@ int main(void) {    // Initialization
 static void UpdateDrawFrame(void) {
     // Update
     //----------------------------------------------------------------------------------
-    // TODO: Update your variables here
+    if (!paused) {
+        simulation_update(grid);
+    }
     //----------------------------------------------------------------------------------
 
     // Draw
     //----------------------------------------------------------------------------------
     BeginDrawing();
-
-        ClearBackground(RAYWHITE);
-
-        DrawText("Congrats! You created your first window!", 190, 200, 20, LIGHTGRAY);
-
+    
+    ClearBackground(RAYWHITE);
+    
+    // Draw the simulation grid
+    rendering_draw_grid(grid);
+    
+    // Draw UI elements
+    rendering_draw_ui(grid, selectedMaterial, brushSize, paused, showDebug);
+    
     EndDrawing();
     //----------------------------------------------------------------------------------
+}
+
+// Clean up resources
+static void CleanupResources(void) {
+    simulation_cleanup();
+    rendering_cleanup();
+    grid_free(grid);
+    CloseWindow();
 }
 

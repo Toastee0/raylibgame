@@ -3,9 +3,4 @@ obj/main.o
 obj\src\*.o
 game.exe
 *.grid
-obj/main.o
-obj/src/grid.o
-obj/src/input.o
-obj/main.o
-obj/src/updatecells.o
 
