@@ -209,3 +209,24 @@ To implement custom behaviors for materials:
 *   Check the Issues tab on GitHub for current tasks and bugs.
 *   Follow existing coding conventions.
 *   Create feature branches for new work.
+
+## Grid Positioning & Navigation
+
+### Grid Origin Point
+The simulation grid is positioned with its origin (0,0) at the top-left corner of the screen, just below the UI bar. This provides several benefits:
+
+1. **Intuitive Coordinates**: The coordinate system matches screen coordinates (increasing x = right, increasing y = down)
+2. **Consistent Reference Point**: When panning and zooming, the top-left corner remains stable
+3. **Maximum Visibility**: Ensures the entire playfield is visible from the start
+
+### Navigation Controls
+- **Pan**: Middle mouse button drag or arrow keys
+- **Zoom**: Mouse wheel or +/- keys
+- **Reset View**: Home key returns to default view
+
+### Technical Notes
+- The grid will always maintain its top-left corner position when the window is resized
+- Cell size is automatically calculated based on the available screen space
+- The coordinate displayed in the UI always refers to the grid cell position, not the screen position
+
+This design ensures that no matter how you resize or zoom the application, the origin point of the simulation remains stable and predictable.

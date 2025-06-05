@@ -92,13 +92,6 @@ Color rendering_get_cell_color(Cell* cell);
 float rendering_get_dpi_scale(void);
 
 /**
- * @brief Get the current cell size in pixels
- * 
- * @return int The current cell size in pixels
- */
-int rendering_get_cell_size(void);
-
-/**
  * @brief Calculate and set the optimal cell size based on window dimensions and grid size
  * 
  * @param grid Pointer to the grid
@@ -119,6 +112,12 @@ void rendering_handle_window_resize(void);
  */
 void rendering_draw_cell_debug(Grid* grid, int x, int y);
 
-// ColorFromInt is now imported from color_utils.h
+/**
+ * @brief Convert an unsigned 32-bit RGBA color integer to a Raylib Color structure
+ * 
+ * @param color 32-bit color in RGBA format (0xRRGGBBAA)
+ * @return Color Raylib Color structure
+ */
+Color ColorFromInt(uint32_t color);
 
 #endif // RENDERING_H

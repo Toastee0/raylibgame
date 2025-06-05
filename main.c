@@ -19,10 +19,10 @@
 //----------------------------------------------------------------------------------
 // Local Variables Definition
 //----------------------------------------------------------------------------------
-// Window settings
-const int screenWidth = 1280;
-const int screenHeight = 720;
-const int targetFPS = 60;
+// Window settings - using static instead of const since window can be resized
+static int screenWidth = 1280;  // Initial width
+static int screenHeight = 720;  // Initial height
+const int targetFPS = 60;       // This can still be const
 
 // Global state
 static Grid* grid = NULL;
@@ -62,6 +62,9 @@ int main(void) {
         CloseWindow();
         return 1;
     }
+    
+    // Calculate optimal cell size based on window dimensions and grid size
+    rendering_calculate_optimal_cell_size(grid);
     
     // Initialize input handling
     if (!input_init()) {
@@ -112,6 +115,17 @@ int main(void) {
 static void UpdateDrawFrame(void) {
     // Update
     //----------------------------------------------------------------------------------
+    // Check if window was resized
+    if (IsWindowResized()) {
+        // Update our screen size variables with the new window dimensions
+        screenWidth = GetScreenWidth();
+        screenHeight = GetScreenHeight();
+        
+        rendering_handle_window_resize();
+        // Recalculate the optimal cell size when window is resized
+        rendering_calculate_optimal_cell_size(grid);
+    }
+    
     if (!paused) {
         simulation_update(grid);
     }

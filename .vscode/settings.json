@@ -13,6 +13,7 @@
 		"simulation.h": "c",
 		"input.h": "c",
 		"rendering.h": "c",
-		"grid.h": "c"
+		"grid.h": "c",
+		"*.old": "c"
 	}
 }
