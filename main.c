@@ -1,25 +1,29 @@
 /*******************************************************************************************
 *
-*   raylib [core] example - Basic window
+*   Falling Sand Simulation with Air Pressure Visualization - Modular Version
 *
 ********************************************************************************************/
 
 #include "raylib.h"
+#include "src/grid.h"
+#include "src/simulation.h"
+#include "src/input.h"
+#include "src/rendering.h"
 
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>
 #endif
 
 //----------------------------------------------------------------------------------
-// Local Variables Definition
+// Constants
 //----------------------------------------------------------------------------------
-const int screenWidth = 1920;
-const int screenHeight = 1080;
+const int screenWidth = 1200;
+const int screenHeight = 800;
 
 //----------------------------------------------------------------------------------
-// Local Functions Declaration
+// Function Declarations
 //----------------------------------------------------------------------------------
-static void UpdateDrawFrame(void);  // Update and Draw one frame
+static void UpdateDrawFrame(void);
 
 //----------------------------------------------------------------------------------
 // Main entry point
@@ -27,15 +31,18 @@ static void UpdateDrawFrame(void);  // Update and Draw one frame
 int main(void) {
     // Initialization
     //--------------------------------------------------------------------------------------
-    InitWindow(screenWidth, screenHeight, "raylib example");
+    InitWindow(screenWidth, screenHeight, "Falling Sand with Air Pressure");
     SetWindowState(FLAG_WINDOW_RESIZABLE);
+    
+    InitializeGrid();
     
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
-#else    // Main game loop
+#else    
+    // Main game loop
     while (!WindowShouldClose())    // Detect window close button or ESC key
     {
         UpdateDrawFrame();
@@ -50,22 +57,25 @@ int main(void) {
     return 0;
 }
 
+//----------------------------------------------------------------------------------
 // Update and Draw frame function
+//----------------------------------------------------------------------------------
 static void UpdateDrawFrame(void) {
     // Update
     //----------------------------------------------------------------------------------
-    // TODO: Update your variables here
+    HandleInput();
+    UpdateSimulation();
     //----------------------------------------------------------------------------------
 
     // Draw
     //----------------------------------------------------------------------------------
     BeginDrawing();
 
-        ClearBackground(RAYWHITE);
-
-        DrawText("Congrats! You created your first window!", 190, 200, 20, LIGHTGRAY);
+        ClearBackground(BLACK);
+        
+        DrawSimulationGrid();
+        DrawUI();
 
     EndDrawing();
     //----------------------------------------------------------------------------------
 }
-
